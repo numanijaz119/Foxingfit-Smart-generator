@@ -3,6 +3,7 @@ from .models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCat
 
 class ScriptCategorySerializer(serializers.ModelSerializer):
     training_type_display = serializers.CharField(source='get_training_type_display', read_only=True)
+    difficulty_display = serializers.CharField(source='get_difficulty_level_display', read_only=True)
     
     class Meta:
         model = ScriptCategory
@@ -11,12 +12,9 @@ class ScriptCategorySerializer(serializers.ModelSerializer):
 class WorkoutScriptSerializer(serializers.ModelSerializer):
     type_display = serializers.CharField(source='get_type_display', read_only=True)
     script_category_display = serializers.CharField(source='script_category.display_name', read_only=True)
-    script_category_name = serializers.CharField(source='script_category.name', read_only=True)
     goal_display = serializers.CharField(source='get_goal_display', read_only=True)
+    intensity_display = serializers.CharField(source='get_intensity_level_display', read_only=True)
     freshness_score = serializers.SerializerMethodField()
-    
-    # Make script_category writable by ID
-    script_category = serializers.PrimaryKeyRelatedField(queryset=ScriptCategory.objects.filter(is_active=True))
     
     class Meta:
         model = WorkoutScript

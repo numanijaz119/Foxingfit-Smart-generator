@@ -1,3 +1,4 @@
+# generator/views.py
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,21 +8,18 @@ from .services import FlexibleWorkoutGenerator
 from .serializers import WorkoutSessionSerializer
 
 class WorkoutGeneratorViewSet(viewsets.ViewSet):
-    """
-    Johnny's flexible workout generator API
-    """
+    """Smart workout generation"""
     
     @action(detail=False, methods=['post'])
     def generate_workout(self, request):
-        """Generate a flexible 1-hour workout"""
+        """Generate a smart 1-hour workout"""
         training_type = request.data.get('training_type')
         goal = request.data.get('goal', 'allround')
         
         if not training_type:
-            return Response(
-                {'error': 'training_type is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                'error': 'training_type is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             generator = FlexibleWorkoutGenerator()
@@ -34,19 +32,17 @@ class WorkoutGeneratorViewSet(viewsets.ViewSet):
             })
             
         except ValueError as e:
-            return Response(
-                {'error': str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({
+                'error': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response(
-                {'error': f'Generation failed: {str(e)}'}, 
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({
+                'error': f'Generation failed: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
     @action(detail=False, methods=['get'])
     def preview_template(self, request):
-        """Preview the workout template for a training type"""
+        """Preview workout template structure"""
         training_type = request.query_params.get('training_type')
         if not training_type:
             return Response({'error': 'training_type parameter required'}, status=400)
@@ -63,11 +59,13 @@ class WorkoutGeneratorViewSet(viewsets.ViewSet):
                 'sequence_order': template.sequence_order,
                 'primary_category': {
                     'id': template.primary_category.id,
-                    'display_name': template.primary_category.display_name
+                    'display_name': template.primary_category.display_name,
+                    'difficulty_level': template.primary_category.difficulty_level
                 },
                 'alternatives': alternatives,
                 'is_required': template.is_required,
-                'or_logic': len(alternatives) > 0
+                'requires_surprise_round': template.requires_surprise_round,
+                'requires_transition': template.requires_transition
             })
         
         return Response({
@@ -76,9 +74,7 @@ class WorkoutGeneratorViewSet(viewsets.ViewSet):
         })
 
 class WorkoutSessionViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    View generated workout sessions
-    """
+    """View generated workouts"""
     queryset = WorkoutSession.objects.all()
     serializer_class = WorkoutSessionSerializer
     

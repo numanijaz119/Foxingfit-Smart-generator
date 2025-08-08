@@ -3,71 +3,78 @@ from .models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCat
 
 @admin.register(ScriptCategory)
 class ScriptCategoryAdmin(admin.ModelAdmin):
-    """
-    Johnny can manage script categories himself
-    """
-    list_display = ['display_name', 'training_type', 'name', 'is_active']
-    list_filter = ['training_type', 'is_active']
+    list_display = ['display_name', 'training_type', 'difficulty_level', 'must_be_last', 'is_active']
+    list_filter = ['training_type', 'difficulty_level', 'must_be_last', 'is_active']
     search_fields = ['display_name', 'name', 'description']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('display_name', 'training_type', 'name')
+            'fields': ('display_name', 'training_type', 'name', 'description'),
+            'description': 'What this workout section is called and what it\'s for.'
         }),
-        ('Details', {
-            'fields': ('description', 'is_active')
+        ('Smart Settings', {
+            'fields': ('difficulty_level', 'must_be_last'),
+            'description': 'Settings that help the system organize workouts intelligently.'
+        }),
+        ('Management', {
+            'fields': ('is_active',),
+            'description': 'Control whether this section appears in the system.'
         }),
     )
 
 @admin.register(WorkoutScript)
 class WorkoutScriptAdmin(admin.ModelAdmin):
     list_display = ['title', 'type', 'script_category', 'goal', 'duration_minutes', 'times_selected', 'is_active']
-    list_filter = ['type', 'script_category__training_type', 'goal', 'language', 'is_active']
+    list_filter = ['type', 'script_category__training_type', 'goal', 'intensity_level', 'is_active']
     search_fields = ['title', 'content']
     readonly_fields = ['times_selected', 'last_selected', 'created_at', 'updated_at']
     
     fieldsets = (
         ('Basic Information', {
-            'fields': ('title', 'type', 'script_category', 'goal', 'language')
+            'fields': ('title', 'type', 'script_category', 'goal', 'language'),
+            'description': 'Essential details about this workout script.'
         }),
-        ('Content', {
-            'fields': ('content', 'duration_minutes')
+        ('Content & Timing', {
+            'fields': ('content', 'duration_minutes'),
+            'description': 'The actual script text and how long it takes to speak.'
         }),
-        ('System', {
+        ('Smart Features', {
+            'fields': ('intensity_level', 'transition_type'),
+            'description': 'Settings that help the system use this script intelligently.'
+        }),
+        ('Management', {
             'fields': ('is_active', 'notes'),
+            'description': 'Control this script and add your personal notes.'
         }),
-        ('Engine Stats', {
+        ('Automatic Tracking', {
             'fields': ('times_selected', 'last_selected'),
-            'classes': ('collapse',)
+            'classes': ('collapse',),
+            'description': 'Usage statistics tracked automatically for variety.'
         }),
     )
-    
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """Filter script categories by training type"""
-        if db_field.name == "script_category":
-            kwargs["queryset"] = ScriptCategory.objects.filter(is_active=True)
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 @admin.register(MotivationalQuote)
 class MotivationalQuoteAdmin(admin.ModelAdmin):
-    """
-    Johnny's motivational quotes management
-    """
     list_display = ['training_type', 'quote_preview', 'context', 'times_used', 'is_active']
     list_filter = ['training_type', 'context', 'language', 'is_active']
     search_fields = ['quote_text']
+    readonly_fields = ['times_used', 'last_used']
     
     fieldsets = (
-        ('Quote Information', {
-            'fields': ('training_type', 'quote_text', 'context', 'language')
+        ('Quote Content', {
+            'fields': ('training_type', 'quote_text', 'context', 'language'),
+            'description': 'The motivational quote and when to use it.'
         }),
-        ('System', {
-            'fields': ('is_active', 'times_used', 'last_used'),
-            'classes': ('collapse',)
+        ('Management', {
+            'fields': ('is_active',),
+            'description': 'Control whether this quote appears in workouts.'
+        }),
+        ('Automatic Tracking', {
+            'fields': ('times_used', 'last_used'),
+            'classes': ('collapse',),
+            'description': 'Usage statistics tracked automatically for variety.'
         }),
     )
-    
-    readonly_fields = ['times_used', 'last_used']
     
     def quote_preview(self, obj):
         return obj.quote_text[:50] + "..." if len(obj.quote_text) > 50 else obj.quote_text
@@ -75,14 +82,27 @@ class MotivationalQuoteAdmin(admin.ModelAdmin):
 
 @admin.register(WorkoutTemplate)
 class WorkoutTemplateAdmin(admin.ModelAdmin):
-    """
-    Johnny's flexible workout templates with OR logic
-    """
-    list_display = ['training_type', 'sequence_order', 'primary_category', 'alternatives_preview', 'is_required']
-    list_filter = ['training_type', 'is_required']
+    list_display = ['training_type', 'sequence_order', 'primary_category', 'alternatives_preview', 'requires_surprise_round', 'requires_transition', 'is_required']
+    list_filter = ['training_type', 'requires_surprise_round', 'requires_transition', 'is_required']
     ordering = ['training_type', 'sequence_order']
     
-    filter_horizontal = ['alternative_categories']  # Nice interface for many-to-many
+    filter_horizontal = ['alternative_categories']
+    
+    fieldsets = (
+        ('Workout Structure', {
+            'fields': ('training_type', 'sequence_order', 'primary_category', 'alternative_categories', 'is_required'),
+            'description': 'Define the basic structure of workouts for this sport.'
+        }),
+        ('Smart Automation', {
+            'fields': ('requires_surprise_round', 'requires_transition', 'transition_script_category', 'sequence_priority'),
+            'description': 'Automatic features that will be applied during workout generation.'
+        }),
+        ('Time Management', {
+            'fields': ('min_duration', 'max_duration', 'preferred_duration'),
+            'classes': ('collapse',),
+            'description': 'Time constraints for this workout section.'
+        }),
+    )
     
     def alternatives_preview(self, obj):
         alternatives = obj.alternative_categories.all()[:3]
@@ -91,16 +111,4 @@ class WorkoutTemplateAdmin(admin.ModelAdmin):
         if obj.alternative_categories.count() > 3:
             preview += f" (+{obj.alternative_categories.count() - 3} more)"
         return preview or "None"
-    alternatives_preview.short_description = 'Alternatives'
-    
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """Filter categories by training type"""
-        if db_field.name == "primary_category":
-            kwargs["queryset"] = ScriptCategory.objects.filter(is_active=True)
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-    
-    def formfield_for_manytomany(self, db_field, request, **kwargs):
-        """Filter alternative categories by training type"""
-        if db_field.name == "alternative_categories":
-            kwargs["queryset"] = ScriptCategory.objects.filter(is_active=True)
-        return super().formfield_for_manytomany(db_field, request, **kwargs)
+    alternatives_preview.short_description = 'Alternative Options'

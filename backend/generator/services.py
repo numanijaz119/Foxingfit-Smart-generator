@@ -1,73 +1,269 @@
 import random
 from django.utils import timezone
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from scripts.models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCategory
 from .models import WorkoutSession, SessionScript
 
-class FlexibleWorkoutGenerator:
+class SportSpecificGeneratorMixin:
     """
-    Johnny's intelligent workout generator with OR logic and time constraints
+    Base mixin providing sport-specific intelligence for workout generation
+    
+    Developer Notes:
+    - This is the foundation class that routes sport-specific logic
+    - Each sport has its own mixin that inherits from this
+    - Provides common methods for surprise rounds, vinyasa, and sport detection
+    - Used by FlexibleWorkoutGenerator to apply sport-specific post-processing
+    """
+    
+    def _apply_sport_specific_logic(self, selected_scripts, training_type, goal):
+        """
+        Route to appropriate sport-specific logic based on training type
+        This is the main entry point for sport-specific post-processing
+        """
+        if training_type == 'kickboxing':
+            return self._apply_kickboxing_logic(selected_scripts, goal)
+        elif training_type == 'power_yoga':
+            return self._apply_power_yoga_logic(selected_scripts, goal)
+        elif training_type == 'calisthenics':
+            return self._apply_calisthenics_logic(selected_scripts, goal)
+        
+        return selected_scripts  # No sport-specific logic, return as-is
+    
+    def _get_surprise_round_script(self, training_type):
+        """
+        Get a surprise round script for kickboxing automatic insertion
+        Powers the automatic surprise round feature
+        """
+        surprise_scripts = WorkoutScript.objects.filter(
+            type=training_type,
+            script_category__name__icontains='surprise',
+            is_active=True
+        ).exclude(id__in=self.used_script_ids)
+        
+        if surprise_scripts.exists():
+            # Use freshness algorithm to prefer unused surprise rounds
+            surprise_scripts = list(surprise_scripts)
+            surprise_scripts.sort(key=lambda s: s.get_freshness_score(), reverse=True)
+            selected = surprise_scripts[0]
+            selected.mark_selected()
+            self.used_script_ids.add(selected.id)
+            return selected
+        
+        return None
+    
+    def _get_vinyasa_transition_script(self, training_type, transition_type):
+        """
+        Get a vinyasa transition script for power yoga automatic insertion
+        Powers the automatic vinyasa transition feature
+        """
+        # Look for specific transition type first
+        vinyasa_scripts = WorkoutScript.objects.filter(
+            type=training_type,
+            transition_type=transition_type,
+            is_active=True
+        ).exclude(id__in=self.used_script_ids)
+        
+        if not vinyasa_scripts.exists():
+            # Fallback to general vinyasa scripts
+            vinyasa_scripts = WorkoutScript.objects.filter(
+                type=training_type,
+                script_category__name__icontains='vinyasa',
+                is_active=True
+            ).exclude(id__in=self.used_script_ids)
+        
+        if vinyasa_scripts.exists():
+            selected = random.choice(vinyasa_scripts)
+            selected.mark_selected()
+            self.used_script_ids.add(selected.id)
+            return selected
+        
+        return None
+
+class KickboxingGeneratorMixin(SportSpecificGeneratorMixin):
+    """
+    Kickboxing-specific logic: Automatic surprise round insertion
+    
+    Developer Notes:
+    - Implements Johnny's surprise round methodology
+    - Adds surprise rounds after core training sections (combos, power, legs)
+    - Skips surprise rounds for warmup and cooldown sections
+    - Uses the surprise round script category for content
+    """
+    
+    def _apply_kickboxing_logic(self, selected_scripts, goal):
+        """
+        Add surprise rounds after core kickboxing sections
+        This implements Johnny's "surprise round glue" between main sections
+        """
+        enhanced_scripts = []
+        
+        for i, script in enumerate(selected_scripts):
+            # Always add the main script first
+            enhanced_scripts.append(script)
+            
+            # Check if this script's category requires a surprise round after it
+            if script.script_category.requires_surprise_round():
+                surprise_round = self._get_surprise_round_script('kickboxing')
+                if surprise_round:
+                    enhanced_scripts.append(surprise_round)
+                    # Developer note: surprise_round is already marked as selected in _get_surprise_round_script
+        
+        return enhanced_scripts
+
+class PowerYogaGeneratorMixin(SportSpecificGeneratorMixin):
+    """
+    Power Yoga-specific logic: Automatic vinyasa transition insertion
+    
+    Developer Notes:
+    - Implements Johnny's vinyasa flow methodology  
+    - Mandatory transitions: Standing-to-Sitting (always inserted)
+    - Optional transitions: Standing-to-Standing (30% chance for variety)
+    - Uses transition_type metadata to select appropriate vinyasa scripts
+    """
+    
+    def _apply_power_yoga_logic(self, selected_scripts, goal):
+        """
+        Add vinyasa transitions between power yoga sections based on position changes
+        This creates the flowing yoga experience Johnny wants
+        """
+        enhanced_scripts = []
+        
+        for i, script in enumerate(selected_scripts):
+            # Always add the main script first
+            enhanced_scripts.append(script)
+            
+            # Check if we need a transition to the next script
+            if i < len(selected_scripts) - 1:
+                current_category = script.script_category.name
+                next_category = selected_scripts[i + 1].script_category.name
+                
+                # MANDATORY: Standing to Sitting transition
+                if ('standing' in current_category and 'seated' in next_category):
+                    vinyasa = self._get_vinyasa_transition_script('power_yoga', 'standing_to_sitting')
+                    if vinyasa:
+                        enhanced_scripts.append(vinyasa)
+                
+                # OPTIONAL: Standing to Standing transition (30% chance for flow variety)
+                elif ('standing' in current_category and 'standing' in next_category):
+                    if random.random() < 0.3:  # 30% chance for variety
+                        vinyasa = self._get_vinyasa_transition_script('power_yoga', 'standing_to_standing')
+                        if vinyasa:
+                            enhanced_scripts.append(vinyasa)
+        
+        return enhanced_scripts
+
+class CalisthenicsGeneratorMixin(SportSpecificGeneratorMixin):
+    """
+    Calisthenics-specific logic: Difficulty progression and MAX challenge placement
+    
+    Developer Notes:
+    - Implements proper difficulty progression for safety
+    - Ensures MAX challenge scripts are always placed at the end
+    - Prevents advanced movements from appearing too early in workouts
+    - Uses difficulty_level and must_be_last metadata for intelligent ordering
+    """
+    
+    def _apply_calisthenics_logic(self, selected_scripts, goal):
+        """
+        Apply difficulty progression and ensure MAX challenge placement at end
+        This ensures safe progression and proper challenge placement
+        """
+        # Separate MAX challenge scripts from regular scripts
+        max_challenge_scripts = []
+        regular_scripts = []
+        
+        for script in selected_scripts:
+            if script.script_category.must_be_last:
+                max_challenge_scripts.append(script)
+            else:
+                regular_scripts.append(script)
+        
+        # Sort regular scripts by difficulty level (beginner → intermediate → advanced)
+        regular_scripts.sort(key=lambda s: s.script_category.difficulty_level)
+        
+        # Combine: regular scripts first, then MAX challenge scripts at end
+        return regular_scripts + max_challenge_scripts
+
+class FlexibleWorkoutGenerator(
+    KickboxingGeneratorMixin,
+    PowerYogaGeneratorMixin, 
+    CalisthenicsGeneratorMixin
+):
+    """
+    Johnny's intelligent workout generator with sport-specific logic
+    
+    Developer Notes:
+    - Main generator class that coordinates all sport-specific intelligence
+    - Inherits from all sport-specific mixins for complete functionality
+    - Follows this flow: Template-based generation → Sport-specific enhancement → Final compilation
+    - Tracks script usage for variety and applies time constraints
     """
     
     def __init__(self):
+        """Initialize generator with tracking and constraints"""
         self.selected_scripts = []
-        self.used_script_ids = set()
-        self.target_duration = 60.0  # 1 hour
-        self.time_flexibility = 5.0  # ± 5 minutes
+        self.used_script_ids = set()        # Prevents duplicate script selection
+        self.target_duration = 60.0         # Johnny's 1-hour target
+        self.time_flexibility = 5.0         # ±5 minutes acceptable range
         
     def generate_1hour_workout(self, training_type, goal='allround'):
         """
-        Generate flexible 1-hour workout following Johnny's OR logic
-        Target: 60 minutes ± 5 minutes (55-65 minutes total)
+        Generate flexible 1-hour workout with sport-specific intelligence
+        
+        Developer Flow:
+        1. Load workout template rules for sport
+        2. Select scripts following OR logic and time constraints  
+        3. Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
+        4. Add filler content if needed to reach target duration
+        5. Compile final script with motivational quotes
+        6. Save workout session with metadata
         """
-        # Get template rules for this training type
+        
+        # STEP 1: Load template rules for this sport
         template_rules = WorkoutTemplate.objects.filter(
             training_type=training_type
-        ).order_by('sequence_order')
+        ).order_by('sequence_order', 'sequence_priority')
         
         if not template_rules.exists():
             raise ValueError(f"No workout template defined for {training_type}")
         
         selected_scripts = []
         total_duration = 0
-        min_duration = self.target_duration - self.time_flexibility  # 55 min
-        max_duration = self.target_duration + self.time_flexibility  # 65 min
+        min_duration = self.target_duration - self.time_flexibility  # 55 minutes
+        max_duration = self.target_duration + self.time_flexibility  # 65 minutes
         
-        # Follow template rules with OR logic
+        # STEP 2: Follow template rules with OR logic and time awareness
         for rule in template_rules:
-            # Get all possible categories (primary + alternatives)
             possible_categories = rule.get_all_possible_categories()
             
-            # Try each possible category until we find suitable scripts
-            selected_category = None
-            selected_script = None
+            # CALISTHENICS SPECIAL RULE: Don't start with advanced movements
+            if training_type == 'calisthenics' and len(selected_scripts) < 2:
+                # Filter out advanced movements for early workout sections
+                possible_categories = [cat for cat in possible_categories 
+                                     if cat.difficulty_level <= 2]
             
+            selected_script = None
             for category in possible_categories:
                 script = self._select_script_for_category(category, goal, training_type)
                 if script:
-                    # Check if adding this script keeps us within time constraints
+                    # Time constraint check: Will this fit with remaining required time?
                     potential_total = total_duration + script.duration_minutes
                     remaining_required_time = self._estimate_remaining_required_time(
                         template_rules, rule.sequence_order, training_type, goal
                     )
                     
-                    # Will we exceed max time?
-                    if potential_total + remaining_required_time > max_duration:
-                        continue  # Try next alternative
-                    
-                    # Select this script
-                    selected_category = category
-                    selected_script = script
-                    break
+                    if potential_total + remaining_required_time <= max_duration:
+                        selected_script = script
+                        break  # Found a suitable script, use it
             
-            # If we found a suitable script, add it
+            # Add selected script to workout
             if selected_script:
                 selected_scripts.append(selected_script)
                 total_duration += selected_script.duration_minutes
                 self.used_script_ids.add(selected_script.id)
-                selected_script.mark_selected()
+                selected_script.mark_selected()  # Track usage for variety
             elif rule.is_required:
-                # This is a required part but we couldn't find anything
+                # This is required but we couldn't find anything suitable, try fallback
                 fallback_script = self._find_fallback_script(training_type, goal, max_duration - total_duration)
                 if fallback_script:
                     selected_scripts.append(fallback_script)
@@ -75,16 +271,21 @@ class FlexibleWorkoutGenerator:
                     self.used_script_ids.add(fallback_script.id)
                     fallback_script.mark_selected()
         
-        # Check if we're in acceptable time range
-        if total_duration < min_duration:
-            # Try to add filler content
-            self._add_filler_content(selected_scripts, training_type, goal, min_duration - total_duration)
-            total_duration = sum(script.duration_minutes for script in selected_scripts)
+        # STEP 3: Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
+        enhanced_scripts = self._apply_sport_specific_logic(selected_scripts, training_type, goal)
         
-        if not selected_scripts:
+        # Recalculate duration after sport-specific additions
+        total_duration = sum(script.duration_minutes for script in enhanced_scripts)
+        
+        # STEP 4: Add filler content if workout is too short
+        if total_duration < min_duration:
+            self._add_filler_content(enhanced_scripts, training_type, goal, min_duration - total_duration)
+            total_duration = sum(script.duration_minutes for script in enhanced_scripts)
+        
+        if not enhanced_scripts:
             raise ValueError("No suitable scripts found for workout generation")
         
-        # Create workout session record
+        # STEP 5: Create workout session record with metadata
         workout_session = WorkoutSession.objects.create(
             training_type=training_type,
             title=self._generate_title(training_type, goal),
@@ -92,17 +293,20 @@ class FlexibleWorkoutGenerator:
             target_duration=self.target_duration,
             time_flexibility=self.time_flexibility,
             goal=goal,
-            compiled_script=self._compile_script(selected_scripts, training_type)
+            compiled_script=self._compile_script(enhanced_scripts, training_type),
+            sport_additions_applied=self._get_sport_additions_summary(enhanced_scripts, training_type)
         )
         
-        # Save the scripts used
-        for i, script in enumerate(selected_scripts):
+        # STEP 6: Save the scripts used in this session
+        for i, script in enumerate(enhanced_scripts):
             SessionScript.objects.create(
                 workout_session=workout_session,
                 workout_script=script,
-                sequence_order=i + 1
+                sequence_order=i + 1,
+                is_sport_addition=script.is_surprise_round() or script.is_vinyasa_transition()
             )
         
+        # Return comprehensive generation results
         return {
             'workout_session_id': workout_session.id,
             'title': workout_session.title,
@@ -114,35 +318,43 @@ class FlexibleWorkoutGenerator:
                 {
                     'title': script.title,
                     'script_category': script.script_category.display_name,
-                    'duration': script.duration_minutes
+                    'duration': script.duration_minutes,
+                    'is_sport_addition': script.is_surprise_round() or script.is_vinyasa_transition()
                 }
-                for script in selected_scripts
+                for script in enhanced_scripts
             ],
-            'compiled_script': workout_session.compiled_script
+            'compiled_script': workout_session.compiled_script,
+            'sport_specific_additions': self._get_sport_additions_summary(enhanced_scripts, training_type)
         }
     
     def _select_script_for_category(self, script_category, goal, training_type):
-        """Select script for a specific script category"""
+        """
+        Select best script for a specific category using freshness algorithm
+        Uses goal matching and freshness scoring for intelligent variety
+        """
         candidates = WorkoutScript.objects.filter(
             type=training_type,
             script_category=script_category,
-            goal__in=[goal, 'allround'],
+            goal__in=[goal, 'allround'],  # Match specific goal or all-round scripts
             is_active=True
         ).exclude(id__in=self.used_script_ids)
         
         if not candidates.exists():
             return None
         
-        # Smart selection: prefer fresh scripts but add randomization
+        # Smart selection: Sort by freshness score, then add randomization
         candidates_list = list(candidates)
         candidates_list.sort(key=lambda s: s.get_freshness_score(), reverse=True)
         
-        # Select from top 3 fresh candidates for variety
+        # Select from top 3 fresh candidates for variety while avoiding overuse
         top_candidates = candidates_list[:3] if len(candidates_list) >= 3 else candidates_list
         return random.choice(top_candidates)
     
     def _estimate_remaining_required_time(self, template_rules, current_order, training_type, goal):
-        """Estimate time needed for remaining required parts"""
+        """
+        Estimate time needed for remaining required template sections
+        Prevents time constraint violations by predicting future requirements
+        """
         remaining_rules = template_rules.filter(
             sequence_order__gt=current_order,
             is_required=True
@@ -150,9 +362,9 @@ class FlexibleWorkoutGenerator:
         
         estimated_time = 0
         for rule in remaining_rules:
-            # Get average duration for required parts
             possible_categories = rule.get_all_possible_categories()
             
+            # Calculate average duration for each possible category
             avg_duration = 0
             category_count = 0
             
@@ -168,15 +380,19 @@ class FlexibleWorkoutGenerator:
                     avg_duration += category_avg
                     category_count += 1
             
+            # Use average of averages, or fallback estimate
             if category_count > 0:
                 estimated_time += avg_duration / category_count
             else:
-                estimated_time += 5.0  # Default estimate
+                estimated_time += 5.0  # Fallback estimate when no data available
         
         return estimated_time
     
     def _find_fallback_script(self, training_type, goal, max_remaining_time):
-        """Find any suitable script when primary options fail"""
+        """
+        Find any suitable script when primary category options fail
+        Safety net for edge cases where specific categories have no available scripts
+        """
         candidates = WorkoutScript.objects.filter(
             type=training_type,
             goal__in=[goal, 'allround'],
@@ -186,11 +402,13 @@ class FlexibleWorkoutGenerator:
         
         if candidates.exists():
             return random.choice(candidates)
-        
         return None
     
     def _add_filler_content(self, selected_scripts, training_type, goal, needed_time):
-        """Add filler content if workout is too short"""
+        """
+        Add additional content if workout is shorter than target duration
+        Ensures workouts meet Johnny's 60-minute target
+        """
         filler_candidates = WorkoutScript.objects.filter(
             type=training_type,
             goal__in=[goal, 'allround'],
@@ -205,45 +423,54 @@ class FlexibleWorkoutGenerator:
                 self.used_script_ids.add(candidate.id)
                 candidate.mark_selected()
                 
-                if needed_time <= 1.0:  # Close enough
+                if needed_time <= 1.0:  # Close enough to target
                     break
     
     def _compile_script(self, scripts, training_type):
-        """Compile selected scripts into final script with motivational quotes"""
+        """
+        Compile selected scripts into final formatted script with motivational quotes
+        Creates the final script output with sport-specific formatting and quote insertion
+        """
         script_parts = []
         
-        # Add opening motivational quote
+        # Add opening motivational quote for workout start
         opening_quote = self._get_motivational_quote(training_type, 'warmup')
         if opening_quote:
             script_parts.append(f"**{opening_quote}**\n\n")
         
         for i, script in enumerate(scripts):
-            # Add script category header
-            script_parts.append(f"\n## {script.script_category.display_name}\n")
+            # Add section headers with sport-specific styling
+            section_type = "🎯 SURPRISE ROUND" if script.is_surprise_round() else ""
+            section_type = "🌊 VINYASA TRANSITION" if script.is_vinyasa_transition() else section_type
+            
+            if section_type:
+                script_parts.append(f"\n{section_type}\n")
+            else:
+                script_parts.append(f"\n## {script.script_category.display_name}\n")
+            
+            # Add script metadata comment
             script_parts.append(f"<!-- {script.title} -->\n")
             
-            # Add the actual content
+            # Add the actual workout content
             script_parts.append(script.content)
             
-            # Add motivational quotes at strategic points
-            if i < len(scripts) - 2:
-                # Add quotes during intense sections
-                if any(keyword in script.script_category.name.lower() 
-                       for keyword in ['power', 'explosive', 'intense', 'max']):
+            # Strategic motivational quote placement
+            if i < len(scripts) - 2:  # Don't add quotes after last two scripts
+                # Add quotes during high-intensity sections
+                if script.intensity_level >= 3 or script.is_surprise_round():
                     motivational_quote = self._get_motivational_quote(training_type, 'intense')
                     if motivational_quote:
                         script_parts.append(f"\n\n**{motivational_quote}**\n")
-                
-                # Add transition quotes between different categories
+                # Add quotes during category transitions
                 elif i > 0 and scripts[i-1].script_category != script.script_category:
                     motivational_quote = self._get_motivational_quote(training_type, 'transition')
                     if motivational_quote:
                         script_parts.append(f"\n\n**{motivational_quote}**\n")
             
-            # Add pause between scripts
+            # Add pause between scripts for pacing
             script_parts.append("\n\n[pause strong] [pause strong]\n")
         
-        # Add closing motivational quote
+        # Add closing motivational quote for workout end
         closing_quote = self._get_motivational_quote(training_type, 'cooldown')
         if closing_quote:
             script_parts.append(f"\n**{closing_quote}**\n")
@@ -251,22 +478,57 @@ class FlexibleWorkoutGenerator:
         return ''.join(script_parts)
     
     def _get_motivational_quote(self, training_type, context):
-        """Get Johnny's motivational quote for insertion"""
+        """
+        Get contextually appropriate motivational quote with variety algorithm
+        Uses usage tracking to ensure quote variety and prevent repetition
+        """
         quotes = MotivationalQuote.objects.filter(
             training_type=training_type,
-            context__in=[context, 'anytime'],
+            context__in=[context, 'anytime'],  # Match specific context or any-time quotes
             is_active=True
-        ).order_by('times_used', 'last_used')  # Prefer less used quotes
+        ).order_by('times_used', 'last_used')  # Prefer less used quotes first
         
         if quotes.exists():
             selected_quote = quotes.first()
-            selected_quote.mark_used()
+            selected_quote.mark_used()  # Track usage for variety
             return selected_quote.get_formatted_quote()
         
         return None
     
+    def _get_sport_additions_summary(self, scripts, training_type):
+        """
+        Create summary of sport-specific additions made during generation
+        Provides metadata about what sport logic was applied for debugging and analytics
+        """
+        summary = {
+            'surprise_rounds_added': 0,
+            'vinyasa_transitions_added': 0,
+            'difficulty_reordered': False,
+            'max_challenge_moved_last': False
+        }
+        
+        # Count sport-specific additions
+        for script in scripts:
+            if script.is_surprise_round():
+                summary['surprise_rounds_added'] += 1
+            if script.is_vinyasa_transition():
+                summary['vinyasa_transitions_added'] += 1
+        
+        # Check for calisthenics-specific reordering
+        if training_type == 'calisthenics':
+            max_challenge_scripts = [s for s in scripts if s.script_category.must_be_last]
+            if max_challenge_scripts:
+                summary['max_challenge_moved_last'] = True
+                
+            # Check if difficulty progression was applied
+            difficulty_levels = [s.script_category.difficulty_level for s in scripts[:-len(max_challenge_scripts)] if not s.script_category.must_be_last]
+            if len(difficulty_levels) > 1 and difficulty_levels == sorted(difficulty_levels):
+                summary['difficulty_reordered'] = True
+        
+        return summary
+    
     def _generate_title(self, training_type, goal):
-        """Generate descriptive title"""
+        """Generate descriptive title for the workout session"""
         type_names = dict(WorkoutScript.TRAINING_TYPES)
         goal_names = dict(WorkoutScript.GOALS)
         
