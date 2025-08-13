@@ -160,7 +160,7 @@ class WorkoutScript(models.Model):
         help_text="The actual script text with [pause strong]/[pause weak] markers"
     )
     duration_minutes = models.FloatField(
-        help_text="How long this takes to speak (from murf.ai timing)"
+        help_text="How long this takes to speak"
     )
     
     # SPORT-SPECIFIC METADATA - These fields enable intelligent sport logic

@@ -70,18 +70,20 @@ class WorkoutSession(models.Model):
     
     def get_time_status(self):
         """
-        Get human-readable time status
+        Get human-readable time status with improved accuracy for custom durations
         Developer: Provides feedback on whether generation hit time targets
         """
         min_duration = self.target_duration - self.time_flexibility
         max_duration = self.target_duration + self.time_flexibility
         
         if self.total_duration < min_duration:
-            return f"Short ({self.total_duration:.1f} min - target {self.target_duration:.0f}±{self.time_flexibility:.0f})"
+            off_by = min_duration - self.total_duration
+            return f"Short ({self.total_duration:.1f}min, -{off_by:.1f}min from target)"
         elif self.total_duration > max_duration:
-            return f"Long ({self.total_duration:.1f} min - target {self.target_duration:.0f}±{self.time_flexibility:.0f})"
+            off_by = self.total_duration - max_duration
+            return f"Long ({self.total_duration:.1f}min, +{off_by:.1f}min over target)"
         else:
-            return f"Perfect ({self.total_duration:.1f} min)"
+            return f"Perfect ({self.total_duration:.1f}min within ±{self.time_flexibility:.0f}min target)"
     
     def get_sport_logic_summary(self):
         """

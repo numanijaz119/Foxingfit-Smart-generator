@@ -190,36 +190,71 @@ class FlexibleWorkoutGenerator(
     CalisthenicsGeneratorMixin
 ):
     """
-    Johnny's intelligent workout generator with sport-specific logic
+    Johnny's intelligent workout generator with sport-specific logic and custom duration support
     
     Developer Notes:
     - Main generator class that coordinates all sport-specific intelligence
     - Inherits from all sport-specific mixins for complete functionality
     - Follows this flow: Template-based generation → Sport-specific enhancement → Final compilation
     - Tracks script usage for variety and applies time constraints
+    - Now supports custom target duration (30-60 minutes)
     """
     
     def __init__(self):
         """Initialize generator with tracking and constraints"""
         self.selected_scripts = []
         self.used_script_ids = set()        # Prevents duplicate script selection
-        self.target_duration = 60.0         # Johnny's 1-hour target
+        self.target_duration = 60.0         # Default target duration
         self.time_flexibility = 5.0         # ±5 minutes acceptable range
         
     def generate_1hour_workout(self, training_type, goal='allround'):
         """
-        Generate flexible 1-hour workout with sport-specific intelligence
+        Generate flexible 1-hour workout with sport-specific intelligence (backward compatibility)
+        
+        Args:
+            training_type: 'kickboxing', 'power_yoga', or 'calisthenics'
+            goal: 'allround', 'strength', 'endurance', 'flexibility', 'technique'
+        
+        Returns:
+            Dict with workout data including time status
+        """
+        return self.generate_workout_with_duration(training_type, goal, 60.0)
+    
+    def generate_workout_with_duration(self, training_type, goal='allround', target_duration=60.0):
+        """
+        Generate workout with custom duration and sport-specific intelligence
         
         Developer Flow:
-        1. Load workout template rules for sport
-        2. Select scripts following OR logic and time constraints  
-        3. Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
-        4. Add filler content if needed to reach target duration
-        5. Compile final script with motivational quotes
-        6. Save workout session with metadata
+        1. Set custom duration parameters
+        2. Load workout template rules for sport
+        3. Select scripts following OR logic and time constraints  
+        4. Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
+        5. Add filler content if needed to reach target duration
+        6. Trim content if workout is too long
+        7. Compile final script with motivational quotes
+        8. Save workout session with metadata
+        
+        Args:
+            training_type: 'kickboxing', 'power_yoga', or 'calisthenics'
+            goal: 'allround', 'strength', 'endurance', 'flexibility', 'technique'
+            target_duration: Target duration in minutes (15-120)
+        
+        Returns:
+            Dict with workout data including time status
         """
         
-        # STEP 1: Load template rules for this sport
+        # STEP 1: Set custom duration parameters
+        self.target_duration = float(target_duration)
+        
+        # Adjust time flexibility based on duration
+        if self.target_duration <= 30:
+            self.time_flexibility = 3.0    # ±3 minutes for short workouts
+        elif self.target_duration <= 45:
+            self.time_flexibility = 4.0    # ±4 minutes for medium workouts  
+        else:
+            self.time_flexibility = 5.0    # ±5 minutes for long workouts
+        
+        # STEP 2: Load template rules for this sport
         template_rules = WorkoutTemplate.objects.filter(
             training_type=training_type
         ).order_by('sequence_order', 'sequence_priority')
@@ -229,10 +264,10 @@ class FlexibleWorkoutGenerator(
         
         selected_scripts = []
         total_duration = 0
-        min_duration = self.target_duration - self.time_flexibility  # 55 minutes
-        max_duration = self.target_duration + self.time_flexibility  # 65 minutes
+        min_duration = self.target_duration - self.time_flexibility
+        max_duration = self.target_duration + self.time_flexibility
         
-        # STEP 2: Follow template rules with OR logic and time awareness
+        # STEP 3: Follow template rules with OR logic and time awareness
         for rule in template_rules:
             possible_categories = rule.get_all_possible_categories()
             
@@ -271,33 +306,38 @@ class FlexibleWorkoutGenerator(
                     self.used_script_ids.add(fallback_script.id)
                     fallback_script.mark_selected()
         
-        # STEP 3: Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
+        # STEP 4: Apply sport-specific enhancements (surprise rounds, vinyasa, ordering)
         enhanced_scripts = self._apply_sport_specific_logic(selected_scripts, training_type, goal)
         
         # Recalculate duration after sport-specific additions
         total_duration = sum(script.duration_minutes for script in enhanced_scripts)
         
-        # STEP 4: Add filler content if workout is too short
+        # STEP 5: Add filler content if workout is too short
         if total_duration < min_duration:
             self._add_filler_content(enhanced_scripts, training_type, goal, min_duration - total_duration)
+            total_duration = sum(script.duration_minutes for script in enhanced_scripts)
+        
+        # STEP 6: Trim content if workout is too long (NEW)
+        if total_duration > max_duration:
+            enhanced_scripts = self._trim_workout_content(enhanced_scripts, max_duration)
             total_duration = sum(script.duration_minutes for script in enhanced_scripts)
         
         if not enhanced_scripts:
             raise ValueError("No suitable scripts found for workout generation")
         
-        # STEP 5: Create workout session record with metadata
+        # STEP 7: Create workout session record with metadata
         workout_session = WorkoutSession.objects.create(
             training_type=training_type,
-            title=self._generate_title(training_type, goal),
+            title=self._generate_title(training_type, goal, self.target_duration),  # Include duration
             total_duration=total_duration,
-            target_duration=self.target_duration,
+            target_duration=self.target_duration,  # Use custom target
             time_flexibility=self.time_flexibility,
             goal=goal,
             compiled_script=self._compile_script(enhanced_scripts, training_type),
             sport_additions_applied=self._get_sport_additions_summary(enhanced_scripts, training_type)
         )
         
-        # STEP 6: Save the scripts used in this session
+        # STEP 8: Save the scripts used in this session
         for i, script in enumerate(enhanced_scripts):
             SessionScript.objects.create(
                 workout_session=workout_session,
@@ -313,6 +353,7 @@ class FlexibleWorkoutGenerator(
             'training_type': training_type,
             'goal': goal,
             'total_duration': total_duration,
+            'target_duration': self.target_duration,  # Include target in response
             'time_status': workout_session.get_time_status(),
             'scripts': [
                 {
@@ -407,7 +448,7 @@ class FlexibleWorkoutGenerator(
     def _add_filler_content(self, selected_scripts, training_type, goal, needed_time):
         """
         Add additional content if workout is shorter than target duration
-        Ensures workouts meet Johnny's 60-minute target
+        Ensures workouts meet the target duration
         """
         filler_candidates = WorkoutScript.objects.filter(
             type=training_type,
@@ -425,6 +466,78 @@ class FlexibleWorkoutGenerator(
                 
                 if needed_time <= 1.0:  # Close enough to target
                     break
+    
+    def _trim_workout_content(self, scripts, max_duration):
+        """
+        Remove optional content if workout is too long
+        NEW: Handles cases where workout exceeds target duration
+        """
+        current_duration = sum(script.duration_minutes for script in scripts)
+        
+        if current_duration <= max_duration:
+            return scripts
+        
+        # Identify required vs optional scripts
+        required_scripts = []
+        optional_scripts = []
+        
+        for script in scripts:
+            # Sport additions and essential scripts are required
+            if (script.is_surprise_round() or 
+                script.is_vinyasa_transition() or 
+                script.intensity_level >= 3 or
+                'warmup' in script.script_category.name.lower() or
+                'cooldown' in script.script_category.name.lower() or
+                'stretch' in script.script_category.name.lower() or
+                'savasana' in script.script_category.name.lower()):
+                required_scripts.append(script)
+            else:
+                optional_scripts.append(script)
+        
+        # Start with required scripts
+        trimmed_scripts = required_scripts[:]
+        current_duration = sum(script.duration_minutes for script in trimmed_scripts)
+        
+        # Add back optional scripts that fit
+        for optional_script in optional_scripts:
+            if current_duration + optional_script.duration_minutes <= max_duration:
+                trimmed_scripts.append(optional_script)
+                current_duration += optional_script.duration_minutes
+        
+        # Reorder scripts logically after trimming
+        return self._reorder_scripts_logically(trimmed_scripts)
+    
+    def _reorder_scripts_logically(self, scripts):
+        """
+        Reorder scripts in logical sequence after trimming
+        Maintains warmup first, cooldown last, sport-specific rules
+        """
+        warmup_scripts = []
+        main_scripts = []
+        cooldown_scripts = []
+        
+        for script in scripts:
+            category_name = script.script_category.name.lower()
+            if ('warmup' in category_name or 
+                'connecting' in category_name or
+                'sun_greeting' in category_name):
+                warmup_scripts.append(script)
+            elif ('cooldown' in category_name or 
+                  'stretch' in category_name or 
+                  'savasana' in category_name or
+                  'mindfulness' in category_name):
+                cooldown_scripts.append(script)
+            else:
+                main_scripts.append(script)
+        
+        # Apply sport-specific ordering to main scripts
+        if scripts and len(scripts) > 0:
+            training_type = scripts[0].type
+            if training_type == 'calisthenics':
+                # Sort by difficulty level for calisthenics
+                main_scripts.sort(key=lambda s: s.script_category.difficulty_level)
+        
+        return warmup_scripts + main_scripts + cooldown_scripts
     
     def _compile_script(self, scripts, training_type):
         """
@@ -527,8 +640,8 @@ class FlexibleWorkoutGenerator(
         
         return summary
     
-    def _generate_title(self, training_type, goal):
-        """Generate descriptive title for the workout session"""
+    def _generate_title(self, training_type, goal, target_duration=None):
+        """Generate descriptive title for the workout session including duration"""
         type_names = dict(WorkoutScript.TRAINING_TYPES)
         goal_names = dict(WorkoutScript.GOALS)
         
@@ -536,4 +649,10 @@ class FlexibleWorkoutGenerator(
         goal_name = goal_names.get(goal, goal)
         timestamp = timezone.now().strftime("%Y-%m-%d %H:%M")
         
-        return f"{base_name} - {goal_name} - {timestamp}"
+        # Include duration in title if provided
+        if target_duration:
+            duration_str = f" ({int(target_duration)}min)"
+        else:
+            duration_str = ""
+        
+        return f"{base_name} - {goal_name}{duration_str} - {timestamp}"
