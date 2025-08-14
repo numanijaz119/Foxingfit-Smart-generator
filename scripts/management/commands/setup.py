@@ -42,9 +42,9 @@ class Command(BaseCommand):
     def _setup_complete_system_from_drive(self, dry_run):
         """Create complete system based on Johnny's actual Google Drive structure and client specifications"""
         
-        # KICKBOXING STRUCTURE (based on client corrections and Drive folders)
+        # KICKBOXING STRUCTURE (FIXED: Added proper warmup category)
         kickboxing_categories = [
-            # Note: cooldown can be used for warmup/shadow boxing too
+            ('kb_warmup', 'Warmup', 1, False),  # ADDED: Proper warmup category for kickboxing
             ('kb_cooldown', 'Cooldown', 1, False),  # Client: "cooldown: thats where I create shadow boxing in(or as warmup"
             ('kb_footwork', 'Footwork', 2, False),  # Client: "footwork."
             ('kb_combinations', 'Combinations', 2, False),  # Client: "just: Combinations."
@@ -71,8 +71,10 @@ class Command(BaseCommand):
             ('py_vinyasa_standing_to_sitting', 'Vinyasa Standing-to-Sitting', 2, False),
         ]
         
-        # CALISTHENICS STRUCTURE (based on client additions and Drive folders)
+        # CALISTHENICS STRUCTURE (FIXED: Added proper warmup category)
         calisthenics_categories = [
+            # ADDED: Proper warmup category for calisthenics
+            ('cal_warmup', 'Warmup', 1, False),  # ADDED: Proper warmup category for calisthenics
             # Basic exercises
             ('cal_pushup', 'Push-up Variations', 1, False),  # Implied from original list
             ('cal_situp', 'Sit-up Variations', 1, False),  # Implied from original list
@@ -124,9 +126,6 @@ class Command(BaseCommand):
         
         # Create workout templates
         self._create_workout_templates_from_structure(dry_run)
-        
-        # Create quotes structure
-        self._create_quotes_from_drive_structure(dry_run)
     
     def _setup_smart_automation_rules(self, dry_run):
         """Setup smart automation rules for each sport"""
@@ -139,7 +138,7 @@ class Command(BaseCommand):
             'kickboxing': {
                 'auto_surprise_rounds': True,
                 'surprise_after': ['combinations', 'legs_kicks', 'endurance'],
-                'no_surprise_after': ['cooldown', 'stretch']
+                'no_surprise_after': ['warmup', 'cooldown', 'stretch']  # Updated to include warmup
             },
             'power_yoga': {
                 'auto_vinyasa': True,
@@ -171,10 +170,10 @@ class Command(BaseCommand):
                 return type('MockCategory', (), {'id': 1, 'name': name})()
             return ScriptCategory.objects.get(training_type=training_type, name=name)
         
-        # KICKBOXING TEMPLATES (updated based on client specifications)
+        # KICKBOXING TEMPLATES (UPDATED: Added proper warmup sequence)
         kickboxing_templates = [
             # (order, primary, alternatives, required, surprise, transition)
-            (1, 'kb_cooldown', [], True, False, False),  # Can be warmup/shadow boxing
+            (1, 'kb_warmup', ['kb_cooldown'], True, False, False),  # UPDATED: Warmup OR Cooldown/shadow boxing
             (2, 'kb_combinations', [], True, True, False),  # + Surprise
             (3, 'kb_legs_kicks', ['kb_abs'], True, True, False),  # Legs OR Abs + Surprise
             (4, 'kb_endurance', ['kb_footwork', 'kb_defence'], False, True, False), # Optional + Surprise
@@ -192,14 +191,15 @@ class Command(BaseCommand):
             (7, 'py_savasana', ['py_mindfulness'], True, False, False),  # Savasana OR mindfulness
         ]
         
-        # CALISTHENICS TEMPLATES (based on client additions)
+        # CALISTHENICS TEMPLATES (UPDATED: Added proper warmup)
         calisthenics_templates = [
-            (1, 'cal_pushup', ['cal_situp'], True, False, False),  # Push-up OR Sit-up
-            (2, 'cal_pullup', ['cal_dips'], True, False, False),   # Pull-up OR Dips
-            (3, 'cal_lsit', ['cal_explosive'], False, False, False), # L-sit OR Explosive
-            (4, 'cal_handstand', ['cal_back_lever', 'cal_front_lever', 'cal_planche'], False, False, False), # Advanced moves
-            (5, 'cal_static_holds', [], False, False, False),     # Optional static holds
-            (6, 'cal_max_challenge', [], False, False, False),    # Will be moved to end automatically
+            (1, 'cal_warmup', [], True, False, False),  # ADDED: Proper warmup
+            (2, 'cal_pushup', ['cal_situp'], True, False, False),  # Push-up OR Sit-up
+            (3, 'cal_pullup', ['cal_dips'], True, False, False),   # Pull-up OR Dips
+            (4, 'cal_lsit', ['cal_explosive'], False, False, False), # L-sit OR Explosive
+            (5, 'cal_handstand', ['cal_back_lever', 'cal_front_lever', 'cal_planche'], False, False, False), # Advanced moves
+            (6, 'cal_static_holds', [], False, False, False),     # Optional static holds
+            (7, 'cal_max_challenge', [], False, False, False),    # Will be moved to end automatically
         ]
         
         all_templates = [
@@ -242,56 +242,6 @@ class Command(BaseCommand):
         
         self.stdout.write(self.style.SUCCESS(f"✅ Created {created_count} workout templates with smart automation"))
     
-    def _create_quotes_from_drive_structure(self, dry_run):
-        """Create motivational quotes based on Johnny's methodology"""
-        
-        # Johnny's motivational quotes (Dutch - from your Drive structure)
-        quotes_data = [
-            # KICKBOXING QUOTES
-            ('kickboxing', 'elke stoot maakt je sterker en zelfverzekerder', 'intense'),
-            ('kickboxing', 'kickboksen leert je discipline en doorzettingsvermogen', 'anytime'),
-            ('kickboxing', 'concentreer je op je ademhaling tussen combinaties', 'transition'),
-            ('kickboxing', 'voel de kracht in elke beweging die je maakt', 'warmup'),
-            ('kickboxing', 'je hebt hard gewerkt, wees trots op jezelf', 'cooldown'),
-            ('kickboxing', 'focus op je techniek, niet alleen op kracht', 'anytime'),
-            ('kickboxing', 'verdediging is net zo belangrijk als aanval', 'transition'),
-            
-            # POWER YOGA QUOTES  
-            ('power_yoga', 'yoga brengt balans in lichaam en geest', 'anytime'),
-            ('power_yoga', 'laat je adem je beweging leiden en begeleiden', 'transition'),
-            ('power_yoga', 'elke houding leert je iets nieuws over jezelf', 'intense'),
-            ('power_yoga', 'verbind met je innerlijke kracht en rust', 'warmup'),
-            ('power_yoga', 'laat alle spanning en stress van je afglijden', 'cooldown'),
-            ('power_yoga', 'mindfulness begint met bewuste ademhaling', 'anytime'),
-            ('power_yoga', 'vind je centrum in elke pose', 'transition'),
-            
-            # CALISTHENICS QUOTES
-            ('calisthenics', 'met elke pull-up word je sterker dan gisteren', 'intense'),
-            ('calisthenics', 'je lichaam is je krachtigste gereedschap', 'anytime'),
-            ('calisthenics', 'vooruitgang komt door consistentie, niet perfectie', 'transition'),
-            ('calisthenics', 'bereid je lichaam voor op de uitdaging', 'warmup'),
-            ('calisthenics', 'trots zijn op wat je vandaag hebt bereikt', 'cooldown'),
-            ('calisthenics', 'handstand training vergt geduld en moed', 'anytime'),
-            ('calisthenics', 'statische houding versterkt lichaam en geest', 'transition'),
-        ]
-        
-        created_count = 0
-        for training_type, quote_text, context in quotes_data:
-            if not dry_run:
-                quote, created = MotivationalQuote.objects.get_or_create(
-                    training_type=training_type,
-                    quote_text=quote_text,
-                    context=context,
-                    defaults={'language': 'nl'}
-                )
-                if created:
-                    created_count += 1
-            else:
-                created_count += 1
-                self.stdout.write(f"[DRY RUN] {training_type} quote: {quote_text[:40]}...")
-        
-        self.stdout.write(self.style.SUCCESS(f"✅ Created {created_count} motivational quotes"))
-    
     def _create_dummy_content(self, dry_run):
         """Create realistic dummy content with proper timeframes for testing"""
         
@@ -308,12 +258,36 @@ class Command(BaseCommand):
         
         # Dummy scripts with realistic durations and content
         dummy_scripts = [
-            # KICKBOXING SCRIPTS
+            # KICKBOXING SCRIPTS (UPDATED: Added proper warmup)
             {
-                'title': 'Shadow Boxing Warmup',
+                'title': 'Dynamic Kickboxing Warmup',
+                'category': 'kb_warmup',
+                'duration': 7.5,
+                'content': '''Welcome to your kickboxing session. Let's properly warm up your body.
+
+[pause strong]
+
+Start with arm circles, forward and backward. Feel your shoulders opening up.
+
+[pause weak]
+
+Add some leg swings. Hold onto something for balance if needed.
+
+[pause strong]
+
+Now some light shadow boxing. Gentle jabs and crosses to activate your muscles.
+
+[pause weak]
+
+Your body is warming up, ready for the real training ahead.''',
+                'goal': 'allround',
+                'intensity': 1
+            },
+            {
+                'title': 'Shadow Boxing Cooldown',
                 'category': 'kb_cooldown',
                 'duration': 8.0,
-                'content': '''Welcome to your kickboxing session. Let's start with some shadow boxing to warm up your body.
+                'content': '''Time for some shadow boxing. This can be used as warmup or cooldown.
 
 [pause strong]
 
@@ -398,7 +372,31 @@ Return to Warrior II and hold. Feel your power.''',
                 'intensity': 2
             },
             
-            # CALISTHENICS SCRIPTS
+            # CALISTHENICS SCRIPTS (UPDATED: Added proper warmup)
+            {
+                'title': 'Joint Mobility Warmup',
+                'category': 'cal_warmup',
+                'duration': 8.0,
+                'content': '''Let's prepare your body for calisthenics training with proper joint mobility.
+
+[pause strong]
+
+Start with neck rolls, slow and controlled. Both directions.
+
+[pause weak]
+
+Shoulder rolls next. Feel the joints loosening up.
+
+[pause strong]
+
+Arm circles, leg swings, hip circles. Your body is waking up.
+
+[pause weak]
+
+**Onthoud, [een goede warming-up is de basis van elke training]**''',
+                'goal': 'allround',
+                'intensity': 1
+            },
             {
                 'title': 'Push-up Progression',
                 'category': 'cal_pushup',

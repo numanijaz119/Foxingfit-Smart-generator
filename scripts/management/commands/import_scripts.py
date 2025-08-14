@@ -83,31 +83,56 @@ class Command(BaseCommand):
         # Define folder name mappings to category names based on EXACT Drive structure
         folder_category_mapping = {
             # KICKBOXING MAPPINGS (based on actual Drive folders)
+            'warmup': 'kb_warmup',
+            'warm-up': 'kb_warmup',
+            'warm up': 'kb_warmup',
             'combinations': 'kb_combinations',
             'combinations (empty)': 'kb_combinations',
+            'combo': 'kb_combinations',
+            'combos': 'kb_combinations',
             'legs & kicks': 'kb_legs_kicks',
             'legs & kicks ': 'kb_legs_kicks',  # Handle trailing space
+            'legs and kicks': 'kb_legs_kicks',
+            'legs': 'kb_legs_kicks',
+            'kicks': 'kb_legs_kicks',
             'abs round': 'kb_abs',
+            'abs': 'kb_abs',
             'footwork': 'kb_footwork',
             'footwork (empty)': 'kb_footwork',
             'defence': 'kb_defence',
             'defence (empty)': 'kb_defence',
+            'defense': 'kb_defence',
             'suprise rounds': 'kb_surprise',    # Note: Drive has typo "Suprise"
             'surprise rounds': 'kb_surprise',   # Handle both spellings
+            'surprise': 'kb_surprise',
             'cooldown': 'kb_cooldown',
             'cooldown (empty)': 'kb_cooldown',
+            'cool-down': 'kb_cooldown',
+            'cool down': 'kb_cooldown',
             'endurance': 'kb_endurance',
             'endurance (empty)': 'kb_endurance',
             'stretch and relax': 'kb_stretch_relax',
+            'stretch': 'kb_stretch_relax',
+            'relax': 'kb_stretch_relax',
+            'stretching': 'kb_stretch_relax',
             'quotes': None,  # Skip quotes folders
             
             # POWER YOGA MAPPINGS (based on actual Drive folders)
             'connecting phase': 'py_connecting',
+            'connecting': 'py_connecting',
             'sun greeting': 'py_sun_greeting',
+            'sun salutation': 'py_sun_greeting',
+            'sun': 'py_sun_greeting',
             'standing poses': 'py_standing',
+            'standing': 'py_standing',
             'yoga flow': 'py_yoga_flow',
+            'flow': 'py_yoga_flow',
             'seated poses': 'py_seated',
+            'seated': 'py_seated',
+            'sitting poses': 'py_seated',
+            'sitting': 'py_seated',
             'lying poses': 'py_lying',
+            'lying': 'py_lying',
             'savasana': 'py_savasana',
             'mindfullness': 'py_mindfulness',  # Handle typo from Drive
             'mindfulness': 'py_mindfulness',   # Correct spelling
@@ -115,22 +140,53 @@ class Command(BaseCommand):
             
             # CALISTHENICS MAPPINGS (based on actual Drive folders)
             'max challenge': 'cal_max_challenge',
+            'max': 'cal_max_challenge',
+            'challenge': 'cal_max_challenge',
             'explosive moves': 'cal_explosive',
+            'explosive': 'cal_explosive',
             'l-sit variation': 'cal_lsit',
+            'l-sit': 'cal_lsit',
+            'lsit': 'cal_lsit',
+            'l sit': 'cal_lsit',
             'dips variation': 'cal_dips',
+            'dips': 'cal_dips',
+            'dip': 'cal_dips',
             'handstand variation': 'cal_handstand',
             'handstand variation (empty)': 'cal_handstand',
+            'handstand': 'cal_handstand',
             'back-lever variation': 'cal_back_lever',
+            'back-lever': 'cal_back_lever',
+            'back lever': 'cal_back_lever',
             'front-lever variation': 'cal_front_lever',
+            'front-lever': 'cal_front_lever',
+            'front lever': 'cal_front_lever',
             'planche variation': 'cal_planche',
+            'planche': 'cal_planche',
             'static holds': 'cal_static_holds',
             'static holds (empty)': 'cal_static_holds',
+            'static': 'cal_static_holds',
+            'holds': 'cal_static_holds',
             'push-up variation': 'cal_pushup',
             'pushup variation': 'cal_pushup',
+            'push-up': 'cal_pushup',
+            'pushup': 'cal_pushup',
+            'push up': 'cal_pushup',
+            'pushups': 'cal_pushup',
+            'push-ups': 'cal_pushup',
             'sit-up variation': 'cal_situp',
             'situp variation': 'cal_situp',
+            'sit-up': 'cal_situp',
+            'situp': 'cal_situp',
+            'sit up': 'cal_situp',
+            'situps': 'cal_situp',
+            'sit-ups': 'cal_situp',
             'pull-up variation': 'cal_pullup',
             'pullup variation': 'cal_pullup',
+            'pull-up': 'cal_pullup',
+            'pullup': 'cal_pullup',
+            'pull up': 'cal_pullup',
+            'pullups': 'cal_pullup',
+            'pull-ups': 'cal_pullup',
             'quotes': None,  # Skip quotes folders
         }
         
@@ -155,6 +211,7 @@ class Command(BaseCommand):
             self.stdout.write(f"\n📁 Processing {sport_folder} ({sport_type})...")
             
             # Process each category folder within sport
+            sport_file_count = 0
             for category_folder in os.listdir(sport_path):
                 category_path = os.path.join(sport_path, category_folder)
                 
@@ -162,18 +219,32 @@ class Command(BaseCommand):
                     continue
                 
                 # Map folder name to category using EXACT Drive names
-                category_name = self._map_folder_to_category(category_folder, folder_category_mapping)
+                category_name = self._map_folder_to_category(category_folder, folder_category_mapping, sport_type)
                 if not category_name:
-                    self.stdout.write(f"   ⚠️ Skipping unknown category: {category_folder}")
+                    self.stdout.write(f"   ⚠️ Skipping unknown/quotes category: {category_folder}")
                     continue
                 
+                self.stdout.write(f"   📂 Processing category: {category_folder} -> {category_name}")
+                
                 # Process files in this category
-                file_count = 0
-                for file_name in os.listdir(category_path):
-                    # Process both .docx and .txt files
-                    if not file_name.lower().endswith(('.docx', '.txt')):
-                        continue
-                    
+                category_file_count = 0
+                files_in_category = []
+                
+                # List all files in this category
+                try:
+                    files_in_category = [f for f in os.listdir(category_path) 
+                                       if f.lower().endswith(('.docx', '.txt'))]
+                except PermissionError:
+                    self.stdout.write(f"   ❌ Permission denied accessing: {category_path}")
+                    continue
+                
+                if not files_in_category:
+                    self.stdout.write(f"   📁 Empty category: {category_folder} (no .docx/.txt files)")
+                    continue
+                
+                self.stdout.write(f"   📄 Found {len(files_in_category)} files in {category_folder}")
+                
+                for file_name in files_in_category:
                     file_path = os.path.join(category_path, file_name)
                     
                     try:
@@ -181,21 +252,26 @@ class Command(BaseCommand):
                             file_path, file_name, sport_type, category_name, dry_run, update_existing
                         )
                         if result == 'created':
-                            file_count += 1
+                            category_file_count += 1
                             total_imported += 1
                         elif result == 'updated':
-                            file_count += 1
+                            category_file_count += 1
                             total_updated += 1
                         elif result == 'skipped':
                             total_skipped += 1
                     except Exception as e:
                         error_msg = f"Error importing {file_path}: {str(e)}"
                         errors.append(error_msg)
-                        if not dry_run:  # Only show errors in real mode
-                            self.stdout.write(self.style.ERROR(f"   ❌ {error_msg}"))
+                        self.stdout.write(self.style.ERROR(f"   ❌ {error_msg}"))
                 
-                if file_count > 0:
-                    self.stdout.write(f"   ✅ {category_folder}: {file_count} files processed")
+                if category_file_count > 0:
+                    self.stdout.write(f"   ✅ {category_folder}: {category_file_count} files processed")
+                    sport_file_count += category_file_count
+                else:
+                    self.stdout.write(f"   ⏭️ {category_folder}: No files processed")
+            
+            if sport_file_count > 0:
+                self.stdout.write(f"📊 {sport_folder} total: {sport_file_count} files processed")
         
         # Summary
         self.stdout.write(f"\n🎯 IMPORT SUMMARY:")
@@ -236,19 +312,173 @@ class Command(BaseCommand):
             return 'calisthenics'
         return None
     
-    def _map_folder_to_category(self, folder_name, mapping):
-        """Map folder name to script category using EXACT Drive matching"""
+    def _map_folder_to_category(self, folder_name, mapping, sport_type=None):
+        """Map folder name to script category using EXACT Drive matching with sport-specific warmup handling"""
         folder_clean = folder_name.lower().strip()
+        
+        # Handle sport-specific warmup mapping first
+        if any(word in folder_clean for word in ['warmup', 'warm-up', 'warm up']):
+            if sport_type == 'kickboxing':
+                return 'kb_warmup'
+            elif sport_type == 'calisthenics':
+                return 'cal_warmup'
+            elif sport_type == 'power_yoga':
+                return 'py_connecting'  # Power yoga uses connecting phase as warmup
         
         # Direct mapping first (exact match)
         if folder_clean in mapping:
-            return mapping[folder_clean]
+            mapped_value = mapping[folder_clean]
+            # Skip warmup entries in mapping since we handle them above
+            if mapped_value and not mapped_value.endswith('_warmup'):
+                return mapped_value
         
         # Handle variations and partial matches
         for key, value in mapping.items():
+            if value is None:  # Skip None values (quotes folders)
+                continue
+            # Skip warmup entries since we handle them above
+            if value and value.endswith('_warmup'):
+                continue
             if key in folder_clean or folder_clean in key:
                 return value
         
+        # Smart fallback: try to infer category from common words
+        return self._infer_category_from_folder_name(folder_clean, sport_type)
+    
+    def _infer_category_from_folder_name(self, folder_name, sport_type=None):
+        """Infer category from folder name using common patterns with sport context"""
+        folder_lower = folder_name.lower()
+        
+        # Handle warmup with sport context
+        if any(word in folder_lower for word in ['warmup', 'warm-up', 'warm up']):
+            if sport_type == 'kickboxing':
+                return 'kb_warmup'
+            elif sport_type == 'calisthenics':
+                return 'cal_warmup'
+            elif sport_type == 'power_yoga':
+                return 'py_connecting'
+            else:
+                return 'warmup_generic'  # Fallback
+        
+        # KICKBOXING patterns
+        elif any(word in folder_lower for word in ['combo', 'combination']):
+            return 'kb_combinations'
+        elif any(word in folder_lower for word in ['leg', 'kick']):
+            return 'kb_legs_kicks'
+        elif any(word in folder_lower for word in ['abs', 'core']):
+            return 'kb_abs'
+        elif any(word in folder_lower for word in ['footwork', 'foot']):
+            return 'kb_footwork'
+        elif any(word in folder_lower for word in ['defence', 'defense']):
+            return 'kb_defence'
+        elif any(word in folder_lower for word in ['surprise', 'suprise']):
+            return 'kb_surprise'
+        elif any(word in folder_lower for word in ['cooldown', 'cool-down', 'cool down']):
+            return 'kb_cooldown'
+        elif any(word in folder_lower for word in ['endurance', 'cardio']):
+            return 'kb_endurance'
+        elif any(word in folder_lower for word in ['stretch', 'relax']):
+            return 'kb_stretch_relax'
+        
+        # POWER YOGA patterns
+        elif any(word in folder_lower for word in ['connecting', 'connect']):
+            return 'py_connecting'
+        elif any(word in folder_lower for word in ['sun', 'greeting', 'salutation']):
+            return 'py_sun_greeting'
+        elif any(word in folder_lower for word in ['standing', 'stand']):
+            return 'py_standing'
+        elif any(word in folder_lower for word in ['flow', 'vinyasa']):
+            return 'py_yoga_flow'
+        elif any(word in folder_lower for word in ['seated', 'sitting', 'sit']):
+            return 'py_seated'
+        elif any(word in folder_lower for word in ['lying', 'lie', 'supine']):
+            return 'py_lying'
+        elif any(word in folder_lower for word in ['savasana', 'corpse']):
+            return 'py_savasana'
+        elif any(word in folder_lower for word in ['mindfulness', 'mindfullness', 'meditation']):
+            return 'py_mindfulness'
+        
+        # CALISTHENICS patterns
+        elif any(word in folder_lower for word in ['max', 'challenge']):
+            return 'cal_max_challenge'
+        elif any(word in folder_lower for word in ['explosive', 'plyometric']):
+            return 'cal_explosive'
+        elif any(word in folder_lower for word in ['l-sit', 'lsit', 'l sit']):
+            return 'cal_lsit'
+        elif any(word in folder_lower for word in ['dip']):
+            return 'cal_dips'
+        elif any(word in folder_lower for word in ['handstand']):
+            return 'cal_handstand'
+        elif any(word in folder_lower for word in ['back', 'lever']) and 'back' in folder_lower:
+            return 'cal_back_lever'
+        elif any(word in folder_lower for word in ['front', 'lever']) and 'front' in folder_lower:
+            return 'cal_front_lever'
+        elif any(word in folder_lower for word in ['planche']):
+            return 'cal_planche'
+        elif any(word in folder_lower for word in ['static', 'hold', 'isometric']):
+            return 'cal_static_holds'
+        elif any(word in folder_lower for word in ['push', 'pushup']):
+            return 'cal_pushup'
+        elif any(word in folder_lower for word in ['sit', 'situp', 'crunch']) and ('up' in folder_lower or 'crunch' in folder_lower):
+            return 'cal_situp'
+        elif any(word in folder_lower for word in ['pull', 'pullup']):
+            return 'cal_pullup'
+        
+        # Skip quotes and other non-exercise folders
+        elif any(word in folder_lower for word in ['quote', 'remember', 'notes']):
+            return None
+        elif any(word in folder_lower for word in ['stretch', 'relax']):
+            return 'kb_stretch_relax'
+        
+        # POWER YOGA patterns
+        elif any(word in folder_lower for word in ['connecting', 'connect']):
+            return 'py_connecting'
+        elif any(word in folder_lower for word in ['sun', 'greeting', 'salutation']):
+            return 'py_sun_greeting'
+        elif any(word in folder_lower for word in ['standing', 'stand']):
+            return 'py_standing'
+        elif any(word in folder_lower for word in ['flow', 'vinyasa']):
+            return 'py_yoga_flow'
+        elif any(word in folder_lower for word in ['seated', 'sitting', 'sit']):
+            return 'py_seated'
+        elif any(word in folder_lower for word in ['lying', 'lie', 'supine']):
+            return 'py_lying'
+        elif any(word in folder_lower for word in ['savasana', 'corpse']):
+            return 'py_savasana'
+        elif any(word in folder_lower for word in ['mindfulness', 'mindfullness', 'meditation']):
+            return 'py_mindfulness'
+        
+        # CALISTHENICS patterns
+        elif any(word in folder_lower for word in ['max', 'challenge']):
+            return 'cal_max_challenge'
+        elif any(word in folder_lower for word in ['explosive', 'plyometric']):
+            return 'cal_explosive'
+        elif any(word in folder_lower for word in ['l-sit', 'lsit', 'l sit']):
+            return 'cal_lsit'
+        elif any(word in folder_lower for word in ['dip']):
+            return 'cal_dips'
+        elif any(word in folder_lower for word in ['handstand']):
+            return 'cal_handstand'
+        elif any(word in folder_lower for word in ['back', 'lever']) and 'back' in folder_lower:
+            return 'cal_back_lever'
+        elif any(word in folder_lower for word in ['front', 'lever']) and 'front' in folder_lower:
+            return 'cal_front_lever'
+        elif any(word in folder_lower for word in ['planche']):
+            return 'cal_planche'
+        elif any(word in folder_lower for word in ['static', 'hold', 'isometric']):
+            return 'cal_static_holds'
+        elif any(word in folder_lower for word in ['push', 'pushup']):
+            return 'cal_pushup'
+        elif any(word in folder_lower for word in ['sit', 'situp', 'crunch']) and ('up' in folder_lower or 'crunch' in folder_lower):
+            return 'cal_situp'
+        elif any(word in folder_lower for word in ['pull', 'pullup']):
+            return 'cal_pullup'
+        
+        # Skip quotes and other non-exercise folders
+        elif any(word in folder_lower for word in ['quote', 'remember', 'notes']):
+            return None
+        
+        # If no pattern matches, return None (will be skipped with warning)
         return None
     
     def _import_single_file(self, file_path, file_name, sport_type, category_name, dry_run, update_existing):
@@ -324,7 +554,7 @@ class Command(BaseCommand):
             # Dry run output
             content_preview = content[:100] + "..." if len(content) > 100 else content
             self.stdout.write(
-                f"   [DRY RUN] CREATE: {title} ({duration:.2f}min, {goal}, intensity:{intensity})"
+                f"   [DRY RUN] CREATE: {title} ({duration:.2f}min, {goal}, intensity:{intensity}, category:{category_name})"
             )
             self.stdout.write(f"     Content preview: {content_preview}")
             return 'created'
@@ -576,10 +806,11 @@ This script was automatically imported from: {filename}
             'kb_endurance', 'kb_surprise', 'cal_explosive', 'cal_max_challenge'
         ]
         
-        # Low intensity categories
+        # WARMUP patterns - need to determine sport context
         low_intensity = [
-            'kb_cooldown', 'kb_stretch_relax', 
-            'py_connecting', 'py_savasana', 'py_mindfulness'
+            'kb_cooldown', 'kb_stretch_relax', 'kb_warmup',  # Added kb_warmup
+            'py_connecting', 'py_savasana', 'py_mindfulness',
+            'cal_warmup'  # Added cal_warmup
         ]
         
         if category_name in high_intensity:
