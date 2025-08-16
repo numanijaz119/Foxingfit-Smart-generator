@@ -278,14 +278,6 @@ class MotivationalQuote(models.Model):
     
     TRAINING_TYPES = WorkoutScript.TRAINING_TYPES
     
-    USAGE_CONTEXT = [
-        ('warmup', 'During Warm-up'),
-        ('intense', 'High Intensity Moments'),
-        ('transition', 'Between Workout Parts'),
-        ('cooldown', 'Cool Down'),
-        ('anytime', 'Any Time'),
-    ]
-    
     # Core quote fields
     training_type = models.CharField(
         max_length=15, 
@@ -295,12 +287,21 @@ class MotivationalQuote(models.Model):
     quote_text = models.TextField(
         help_text="The motivational text - 'Onthoud,' will be added automatically"
     )
-    context = models.CharField(
-        max_length=15, 
-        choices=USAGE_CONTEXT, 
-        default='anytime',
-        help_text="When to use this quote during workouts"
+   
+    target_category = models.ForeignKey(
+        'ScriptCategory',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='specific_quotes',
+        help_text="Specific exercise category (leave blank for general quotes)"
     )
+    is_exercise_specific = models.BooleanField(
+        default=False,
+        help_text="Only use during the selected exercise category"
+    )
+
+
     language = models.CharField(
         max_length=2, 
         choices=WorkoutScript.LANGUAGES, 
@@ -327,9 +328,27 @@ class MotivationalQuote(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:
-        ordering = ['training_type', 'context']
+        ordering = ['training_type', 'is_exercise_specific', 'target_category']
         verbose_name = "Motivational Quote"
         verbose_name_plural = "Motivational Quotes"
+
+    def clean(self):
+        """Validation to ensure consistency"""
+        from django.core.exceptions import ValidationError
+        
+        if self.is_exercise_specific and not self.target_category:
+            raise ValidationError("Exercise-specific quotes must have a target category")
+        if not self.is_exercise_specific and self.target_category:
+            raise ValidationError("General quotes should not have a target category")
+        
+        # Ensure target_category matches training_type
+        if self.target_category and self.target_category.training_type != self.training_type:
+            raise ValidationError("Target category must match the quote's training type")
+        
+    def save(self, *args, **kwargs):
+        """Auto-set is_exercise_specific based on target_category"""
+        self.is_exercise_specific = bool(self.target_category)
+        super().save(*args, **kwargs)
     
     # USAGE TRACKING METHODS - Power the quote variety system
     def mark_used(self):
@@ -342,8 +361,15 @@ class MotivationalQuote(models.Model):
         """Returns the quote in Johnny's standard format"""
         return f"Onthoud, [{self.quote_text}]"
     
+    def matches_script_category(self, script_category):
+        """Check if this quote matches the given script category"""
+        if not self.is_exercise_specific:
+            return True  # General quotes match any category
+        return self.target_category_id == script_category.id
+    
     def __str__(self):
-        return f"{self.get_training_type_display()} - {self.quote_text[:50]}..."
+        category_info = f" ({self.target_category.display_name})" if self.target_category else " (General)"
+        return f"{self.get_training_type_display()}{category_info} - {self.quote_text[:50]}..."
 
 class WorkoutTemplate(models.Model):
     """

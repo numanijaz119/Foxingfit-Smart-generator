@@ -25,12 +25,15 @@ class WorkoutScriptSerializer(serializers.ModelSerializer):
 
 class MotivationalQuoteSerializer(serializers.ModelSerializer):
     training_type_display = serializers.CharField(source='get_training_type_display', read_only=True)
-    context_display = serializers.CharField(source='get_context_display', read_only=True)
+    target_category_display = serializers.SerializerMethodField()
     formatted_quote = serializers.CharField(source='get_formatted_quote', read_only=True)
     
     class Meta:
         model = MotivationalQuote
         fields = '__all__'
+    
+    def get_target_category_display(self, obj):
+        return obj.target_category.display_name if obj.target_category else "General"
 
 class WorkoutTemplateSerializer(serializers.ModelSerializer):
     primary_category_display = serializers.CharField(source='primary_category.display_name', read_only=True)

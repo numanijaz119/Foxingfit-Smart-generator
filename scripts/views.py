@@ -92,11 +92,18 @@ class MotivationalQuoteViewSet(viewsets.ModelViewSet):
         if training_type:
             queryset = queryset.filter(training_type=training_type)
         
-        context = self.request.query_params.get('context')
-        if context:
-            queryset = queryset.filter(context=context)
+        # Filter by exercise-specific vs general
+        is_exercise_specific = self.request.query_params.get('is_exercise_specific')
+        if is_exercise_specific is not None:
+            queryset = queryset.filter(is_exercise_specific=is_exercise_specific.lower() == 'true')
         
-        return queryset.order_by('training_type', 'context', 'quote_text')
+        # Filter by target category
+        target_category_id = self.request.query_params.get('target_category_id')
+        if target_category_id:
+            queryset = queryset.filter(target_category_id=target_category_id)
+        
+        return queryset.order_by('training_type', 'is_exercise_specific', 'target_category', 'quote_text')
+
 
 class WorkoutTemplateViewSet(viewsets.ModelViewSet):
     """Manage workout templates"""
