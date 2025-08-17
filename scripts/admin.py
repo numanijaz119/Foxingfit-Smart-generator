@@ -55,30 +55,53 @@ class WorkoutScriptAdmin(admin.ModelAdmin):
 
 @admin.register(MotivationalQuote)
 class MotivationalQuoteAdmin(admin.ModelAdmin):
-    list_display = ['training_type', 'quote_preview', 'context', 'times_used', 'is_active']
-    list_filter = ['training_type', 'context', 'language', 'is_active']
+    list_display = ['quote_preview', 'training_type', 'target_category_display', 'is_exercise_specific', 'times_used', 'is_active']
+    list_filter = ['training_type', 'is_exercise_specific', 'target_category__training_type', 'is_active']
     search_fields = ['quote_text']
-    readonly_fields = ['times_used', 'last_used']
+    readonly_fields = ['times_used', 'last_used', 'is_exercise_specific']
     
     fieldsets = (
         ('Quote Content', {
-            'fields': ('training_type', 'quote_text', 'context', 'language'),
-            'description': 'The motivational quote and when to use it.'
+            'fields': ('training_type', 'quote_text', 'language'),
+            'description': 'The motivational quote and what sport it\'s for.'
+        }),
+        ('Exercise Targeting', {
+            'fields': ('target_category',),
+            'description': 'Link to specific exercise (leave blank for general quotes).'
         }),
         ('Management', {
             'fields': ('is_active',),
-            'description': 'Control whether this quote appears in workouts.'
+            'description': 'Quote settings and status.'
         }),
         ('Automatic Tracking', {
-            'fields': ('times_used', 'last_used'),
+            'fields': ('is_exercise_specific', 'times_used', 'last_used'),
             'classes': ('collapse',),
-            'description': 'Usage statistics tracked automatically for variety.'
+            'description': 'System-managed fields (read-only).'
         }),
     )
     
     def quote_preview(self, obj):
         return obj.quote_text[:50] + "..." if len(obj.quote_text) > 50 else obj.quote_text
     quote_preview.short_description = 'Quote Preview'
+    
+    def target_category_display(self, obj):
+        return obj.target_category.display_name if obj.target_category else "General"
+    target_category_display.short_description = 'Target Exercise'
+    
+    def get_form(self, request, obj=None, **kwargs):
+        """Filter target_category choices based on training_type"""
+        form = super().get_form(request, obj, **kwargs)
+        if 'target_category' in form.base_fields:
+            if obj:  # Editing existing quote
+                form.base_fields['target_category'].queryset = ScriptCategory.objects.filter(
+                    training_type=obj.training_type,
+                    is_active=True
+                ).order_by('display_name')
+            else:  # Creating new quote
+                form.base_fields['target_category'].queryset = ScriptCategory.objects.filter(
+                    is_active=True
+                ).order_by('training_type', 'display_name')
+        return form
 
 @admin.register(WorkoutTemplate)
 class WorkoutTemplateAdmin(admin.ModelAdmin):

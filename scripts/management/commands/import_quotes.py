@@ -1,8 +1,10 @@
+# REPLACE the entire scripts/management/commands/import_quotes.py file with this:
+
 import os
 import re
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from scripts.models import MotivationalQuote
+from scripts.models import MotivationalQuote, ScriptCategory
 
 # For DOCX file reading
 try:
@@ -12,7 +14,7 @@ except ImportError:
     DOCX_AVAILABLE = False
 
 class Command(BaseCommand):
-    help = 'Import motivational quotes from DOCX files in DATABASE_CONTENT quotes folders'
+    help = 'Import motivational quotes from DOCX files with intelligent exercise-specific detection'
     
     def add_arguments(self, parser):
         parser.add_argument('--folder-path', type=str, default='DATABASE_CONTENT',
@@ -72,7 +74,7 @@ class Command(BaseCommand):
         self.stdout.write("python-docx==0.8.11")
     
     def _import_quotes_from_folders(self, folder_path, dry_run, update_existing):
-        """Import quotes from DATABASE_CONTENT quotes folders"""
+        """Import quotes from DATABASE_CONTENT quotes folders with exercise-specific detection"""
         
         if not os.path.exists(folder_path):
             self.stdout.write(self.style.ERROR(f"❌ Folder {folder_path} does not exist"))
@@ -82,6 +84,8 @@ class Command(BaseCommand):
         total_imported = 0
         total_updated = 0
         total_skipped = 0
+        exercise_specific_found = 0
+        general_quotes_created = 0
         errors = []
         
         # Process each sport folder
@@ -132,6 +136,8 @@ class Command(BaseCommand):
                             total_imported += results['imported']
                             total_updated += results['updated']
                             total_skipped += results['skipped']
+                            exercise_specific_found += results['exercise_specific']
+                            general_quotes_created += results['general']
                             
                         except Exception as e:
                             error_msg = f"Error processing {file_path}: {str(e)}"
@@ -144,6 +150,8 @@ class Command(BaseCommand):
         # Summary
         self.stdout.write(f"\n🎯 QUOTES IMPORT SUMMARY:")
         self.stdout.write(self.style.SUCCESS(f"✅ New quotes imported: {total_imported}"))
+        self.stdout.write(self.style.SUCCESS(f"🎯 Exercise-specific quotes: {exercise_specific_found}"))
+        self.stdout.write(self.style.SUCCESS(f"🌐 General quotes: {general_quotes_created}"))
         if total_updated > 0:
             self.stdout.write(self.style.SUCCESS(f"🔄 Quotes updated: {total_updated}"))
         if total_skipped > 0:
@@ -169,7 +177,7 @@ class Command(BaseCommand):
         return any(keyword in folder_lower for keyword in quotes_keywords)
     
     def _process_quotes_file(self, file_path, file_name, sport_type, dry_run, update_existing):
-        """Process a single DOCX file and extract quotes"""
+        """Process a single DOCX file and extract quotes with intelligent categorization"""
         
         self.stdout.write(f"   📖 Processing: {file_name}")
         
@@ -181,45 +189,310 @@ class Command(BaseCommand):
         
         if not quotes_text:
             self.stdout.write(f"   ⚠️ No content found in {file_name}")
-            return {'imported': 0, 'updated': 0, 'skipped': 0}
+            return {'imported': 0, 'updated': 0, 'skipped': 0, 'exercise_specific': 0, 'general': 0}
         
         # Extract quotes starting with "Onthoud"
         quotes = self._extract_quotes_from_text(quotes_text)
         
         if not quotes:
             self.stdout.write(f"   ⚠️ No quotes starting with 'Onthoud' found in {file_name}")
-            return {'imported': 0, 'updated': 0, 'skipped': 0}
+            return {'imported': 0, 'updated': 0, 'skipped': 0, 'exercise_specific': 0, 'general': 0}
         
         self.stdout.write(f"   💬 Found {len(quotes)} quotes in {file_name}")
         
         # Process each quote
-        results = {'imported': 0, 'updated': 0, 'skipped': 0}
+        results = {'imported': 0, 'updated': 0, 'skipped': 0, 'exercise_specific': 0, 'general': 0}
         
         for i, quote_text in enumerate(quotes, 1):
             try:
-                # Determine context for this quote
-                context = self._determine_quote_context(quote_text, file_name)
-                
                 # Clean quote text
                 clean_quote = self._clean_quote_text(quote_text)
                 
                 if not clean_quote:
                     continue
                 
+                # NEW: Intelligent exercise-specific detection
+                target_category = self._detect_exercise_specific_category(clean_quote, sport_type)
+                
                 # Import/update quote
-                result = self._import_single_quote(
-                    clean_quote, sport_type, context, dry_run, update_existing, file_name
+                result, is_exercise_specific = self._import_single_quote(
+                    clean_quote, sport_type, target_category, dry_run, update_existing, file_name
                 )
                 results[result] += 1
                 
+                if is_exercise_specific:
+                    results['exercise_specific'] += 1
+                else:
+                    results['general'] += 1
+                
                 if dry_run:
-                    self.stdout.write(f"   [DRY RUN] Quote {i}: {clean_quote[:80]}... -> {context}")
+                    category_info = f" -> {target_category.display_name}" if target_category else " -> General"
+                    self.stdout.write(f"   [DRY RUN] Quote {i}: {clean_quote[:60]}...{category_info}")
                     
             except Exception as e:
                 self.stdout.write(self.style.ERROR(f"   ❌ Error processing quote {i}: {str(e)}"))
         
         return results
     
+    def _detect_exercise_specific_category(self, quote_text, sport_type):
+        """
+        Intelligent detection of exercise-specific categories based on Dutch quote content
+        
+        Returns:
+            ScriptCategory instance if exercise-specific, None if general
+        """
+        quote_lower = quote_text.lower()
+        
+        # Get all categories for this sport
+        categories = ScriptCategory.objects.filter(training_type=sport_type, is_active=True)
+        
+        # KICKBOXING EXERCISE DETECTION (Dutch + English)
+        if sport_type == 'kickboxing':
+            # Combinations detection
+            if any(word in quote_lower for word in [
+                # Dutch terms
+                'combinatie', 'combinaties', 'combo', 'combos', 'slag', 'slagen', 
+                'stoot', 'stooten', 'serie', 'reeks', 'verbinding', 
+                # English terms  
+                'combination', 'combinations', 'jab', 'cross', 'hook', 'uppercut', '1-2',
+                'punch', 'punching', 'boxing'
+            ]):
+                return categories.filter(name='kb_combinations').first()
+            
+            # Legs & Kicks detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'trap', 'trappen', 'been', 'benen', 'knie', 'knieën', 'schop', 'schoppen',
+                'voet', 'voeten', 'laag', 'hoog', 'rond', 'voor', 'zij',
+                # English terms
+                'kick', 'kicks', 'knee', 'leg', 'legs', 'roundhouse', 'front kick', 
+                'side kick', 'low kick', 'high kick', 'shin'
+            ]):
+                return categories.filter(name='kb_legs_kicks').first()
+            
+            # Footwork detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'voetwerk', 'beweging', 'beweeg', 'stap', 'stappen', 'draai', 'draaien',
+                'positie', 'houding', 'balans', 'ritme', 'timing',
+                # English terms
+                'footwork', 'movement', 'step', 'steps', 'pivot', 'position', 'stance'
+            ]):
+                return categories.filter(name='kb_footwork').first()
+            
+            # Defense detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'verdediging', 'verdedig', 'blok', 'blokkeren', 'afweer', 'afweren',
+                'dekking', 'bescherming', 'ontwijken', 'ontwijk', 'pareren',
+                # English terms
+                'defence', 'defense', 'block', 'blocking', 'parry', 'dodge', 'guard'
+            ]):
+                return categories.filter(name='kb_defence').first()
+            
+            # Endurance detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'uithoudingsvermogen', 'conditie', 'stamina', 'volhouden', 'doorzetten',
+                'cardio', 'tempo', 'ritme', 'ademhaling', 'adem',
+                # English terms
+                'endurance', 'stamina', 'cardio', 'conditioning', 'breathing'
+            ]):
+                return categories.filter(name='kb_endurance').first()
+            
+            # Abs detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'buik', 'buikspieren', 'core', 'kernstabiliteit', 'kern', 'romp',
+                'plank', 'buikspier',
+                # English terms
+                'abs', 'abdominal', 'core', 'plank'
+            ]):
+                return categories.filter(name='kb_abs').first()
+        
+        # POWER YOGA EXERCISE DETECTION (Dutch + English)
+        elif sport_type == 'power_yoga':
+            # Standing poses detection
+            if any(word in quote_lower for word in [
+                # Dutch terms
+                'krijger', 'staand', 'staande', 'driehoek', 'boom', 'berg', 'staan',
+                'balans', 'stabiliteit', 'grond', 'voeten',
+                # English terms
+                'warrior', 'standing', 'triangle', 'tree', 'mountain', 'balance'
+            ]):
+                return categories.filter(name='py_standing').first()
+            
+            # Seated poses detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'zittend', 'zittende', 'zitten', 'draai', 'draaien', 'voorwaartse',
+                'voorover', 'ruggengraat', 'wervelkolom', 'twist',
+                # English terms
+                'seated', 'sitting', 'twist', 'forward fold', 'spinal', 'spine'
+            ]):
+                return categories.filter(name='py_seated').first()
+            
+            # Sun greeting detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'zon', 'zonnegroet', 'zonnegroeten', 'groet', 'groeten', 'flow',
+                'vinyasa', 'beweging', 'vloeiend',
+                # English terms
+                'sun', 'surya', 'namaskara', 'salutation', 'greeting', 'flow'
+            ]):
+                return categories.filter(name='py_sun_greeting').first()
+            
+            # Savasana detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'savasana', 'ontspanning', 'ontspannen', 'rust', 'rusten', 'liggen',
+                'liggend', 'eindontspanning', 'herstel',
+                # English terms
+                'savasana', 'corpse', 'relax', 'relaxation', 'rest', 'lying', 'final'
+            ]):
+                return categories.filter(name='py_savasana').first()
+            
+            # Mindfulness detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'mindfulness', 'aandacht', 'aandachtig', 'meditatie', 'mediteren',
+                'bewustzijn', 'bewust', 'aanwezig', 'aanwezigheid', 'focus',
+                # English terms
+                'mindfulness', 'meditation', 'awareness', 'present', 'conscious'
+            ]):
+                return categories.filter(name='py_mindfulness').first()
+            
+            # Lying poses detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'liggend', 'liggende', 'liggen', 'brug', 'brughouding', 'vis',
+                'vishouding', 'rug', 'rugligging',
+                # English terms
+                'lying', 'supine', 'bridge', 'fish', 'happy baby', 'reclined'
+            ]):
+                return categories.filter(name='py_lying').first()
+        
+        # CALISTHENICS EXERCISE DETECTION (Dutch + English)
+        elif sport_type == 'calisthenics':
+            # Push-up detection
+            if any(word in quote_lower for word in [
+                # Dutch terms
+                'opdrukken', 'opdruk', 'drukken', 'push', 'borst', 'borstspieren',
+                'chest', 'arm', 'armen', 'triceps',
+                # English terms
+                'push', 'pushup', 'push-up', 'chest', 'tricep'
+            ]):
+                return categories.filter(name='cal_pushup').first()
+            
+            # Pull-up detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'optrekken', 'optrek', 'trekken', 'pull', 'kin', 'kinup', 'stang',
+                'rekstok', 'rug', 'rugspieren', 'lat',
+                # English terms
+                'pull', 'pullup', 'pull-up', 'chin', 'chin-up', 'bar'
+            ]):
+                return categories.filter(name='cal_pullup').first()
+            
+            # Handstand detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'handstand', 'handstandje', 'handen', 'handstand', 'muur', 'wand',
+                'omgekeerd', 'ondersteboven', 'balans',
+                # English terms
+                'handstand', 'hands', 'wall', 'inverted', 'upside'
+            ]):
+                return categories.filter(name='cal_handstand').first()
+            
+            # L-sit detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'l-sit', 'lsit', 'l sit', 'l-zitten', 'parallette', 'dips station',
+                'zweven', 'core', 'buik',
+                # English terms
+                'l-sit', 'lsit', 'l sit', 'parallel bars'
+            ]):
+                return categories.filter(name='cal_lsit').first()
+            
+            # Dips detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'dip', 'dips', 'tricep', 'triceps', 'parallel', 'parallette',
+                'dip station', 'zakken', 'omhoog',
+                # English terms
+                'dip', 'dips', 'tricep', 'triceps', 'parallel', 'bars'
+            ]):
+                return categories.filter(name='cal_dips').first()
+            
+            # Planche detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'planche', 'zwevend', 'zweven', 'geavanceerd', 'advanced', 'moeilijk',
+                'uitdagend', 'pro', 'expert',
+                # English terms
+                'planche', 'hover', 'advanced', 'elite'
+            ]):
+                return categories.filter(name='cal_planche').first()
+            
+            # Back lever detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'back lever', 'rugwaarts', 'rug', 'achterwaarts', 'omgekeerd',
+                # English terms
+                'back lever', 'backward'
+            ]):
+                return categories.filter(name='cal_back_lever').first()
+            
+            # Front lever detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'front lever', 'voorwaarts', 'voorkant', 'voor', 'horizontaal',
+                # English terms
+                'front lever', 'forward', 'horizontal'
+            ]):
+                return categories.filter(name='cal_front_lever').first()
+            
+            # Explosive moves detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'explosief', 'explosieve', 'kracht', 'snelkracht', 'power', 'springen',
+                'jump', 'plyometric', 'snel', 'snelheid',
+                # English terms
+                'explosive', 'power', 'plyometric', 'jump', 'speed'
+            ]):
+                return categories.filter(name='cal_explosive').first()
+            
+            # Max challenge detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'max', 'maximum', 'uitdaging', 'challenge', 'limiet', 'limit',
+                'grenzen', 'grens', 'ultimate', 'ultiem', 'zwaarst',
+                # English terms
+                'max', 'maximum', 'challenge', 'limit', 'ultimate', 'hardest'
+            ]):
+                return categories.filter(name='cal_max_challenge').first()
+            
+            # Static holds detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'statisch', 'static', 'houden', 'vasthouden', 'hold', 'isometrisch',
+                'isometric', 'stil', 'stilhouden',
+                # English terms
+                'static', 'hold', 'isometric', 'holds'
+            ]):
+                return categories.filter(name='cal_static_holds').first()
+            
+            # Sit-up detection
+            elif any(word in quote_lower for word in [
+                # Dutch terms
+                'sit', 'situp', 'sit-up', 'buik', 'buikspieren', 'abs', 'crunch',
+                'opkomen', 'buikspier',
+                # English terms
+                'sit', 'situp', 'sit-up', 'abs', 'crunch', 'abdominal'
+            ]):
+                return categories.filter(name='cal_situp').first()
+        
+        return None  # No specific exercise detected, create as general quote
     def _read_docx_content(self, file_path):
         """Read content from DOCX file"""
         try:
@@ -321,46 +594,15 @@ class Command(BaseCommand):
         
         return clean_text
     
-    def _determine_quote_context(self, quote_text, file_name):
-        """Determine the context for a quote based on content"""
+    def _import_single_quote(self, quote_text, sport_type, target_category, dry_run, update_existing, source_file):
+        """
+        Import or update a single motivational quote with exercise-specific targeting
         
-        quote_lower = quote_text.lower()
+        Returns:
+            Tuple of (result_status, is_exercise_specific)
+        """
         
-        # High intensity keywords
-        intense_keywords = [
-            'kracht', 'sterker', 'hard', 'uitdaging', 'challenge',
-            'vechten', 'slaan', 'gevecht', 'power', 'explosive'
-        ]
-        
-        # Warmup keywords
-        warmup_keywords = [
-            'begin', 'start', 'voorbereid', 'prepare', 'warming', 'warm', 'klaar'
-        ]
-        
-        # Cooldown keywords
-        cooldown_keywords = [
-            'rust', 'ontspan', 'relax', 'kalm', 'trots', 'gedaan', 'zweet'
-        ]
-        
-        # Transition keywords  
-        transition_keywords = [
-            'focus', 'concentreer', 'ademhaling', 'adem', 'balans', 'ritme'
-        ]
-        
-        # Check quote content for context clues
-        if any(keyword in quote_lower for keyword in intense_keywords):
-            return 'intense'
-        elif any(keyword in quote_lower for keyword in warmup_keywords):
-            return 'warmup'
-        elif any(keyword in quote_lower for keyword in cooldown_keywords):
-            return 'cooldown'
-        elif any(keyword in quote_lower for keyword in transition_keywords):
-            return 'transition'
-        
-        return 'anytime'
-    
-    def _import_single_quote(self, quote_text, sport_type, context, dry_run, update_existing, source_file):
-        """Import or update a single motivational quote"""
+        is_exercise_specific = bool(target_category)
         
         if not dry_run:
             # Check if quote already exists
@@ -371,28 +613,31 @@ class Command(BaseCommand):
             
             if existing_quote:
                 if update_existing:
-                    existing_quote.context = context
+                    # Update with new target category
+                    existing_quote.target_category = target_category
+                    existing_quote.is_exercise_specific = is_exercise_specific
                     existing_quote.save()
-                    return 'updated'
+                    return 'updated', is_exercise_specific
                 else:
-                    return 'skipped'
+                    return 'skipped', existing_quote.is_exercise_specific
             else:
-                # Create new quote
+                # Create new quote with intelligent targeting
                 MotivationalQuote.objects.create(
                     training_type=sport_type,
                     quote_text=quote_text,
-                    context=context,
+                    target_category=target_category,
+                    is_exercise_specific=is_exercise_specific,
                     language='nl'
                 )
-                return 'imported'
+                return 'imported', is_exercise_specific
         else:
             # Dry run
             existing_quote = MotivationalQuote.objects.filter(
                 training_type=sport_type,
                 quote_text=quote_text
-            ).exists()
+            ).first()
             
             if existing_quote:
-                return 'skipped' if not update_existing else 'updated'
+                return ('skipped' if not update_existing else 'updated'), is_exercise_specific
             else:
-                return 'imported'
+                return 'imported', is_exercise_specific

@@ -3,6 +3,8 @@ from django.utils import timezone
 from django.db.models import Avg, Q
 from scripts.models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCategory
 from .models import WorkoutSession, SessionScript
+from .quote_processor import QuoteProcessor
+from .branding import FoxingFitBranding
 
 class SportSpecificGeneratorMixin:
     """
@@ -541,16 +543,20 @@ class FlexibleWorkoutGenerator(
     
     def _compile_script(self, scripts, training_type):
         """
-        Compile selected scripts into final formatted script with motivational quotes
-        Creates the final script output with sport-specific formatting and quote insertion
+        Compile scripts with Foxing Fit branding and intelligent quote placeholder replacement
+        
+        1. Start with Foxing Fit opening (NO quotes at start)
+        2. Process each script's [Onthoud,..] placeholders ONLY
+        3. End with Foxing Fit closing (NO quotes at end)
         """
         script_parts = []
+        quote_processor = QuoteProcessor()
         
-        # Add opening motivational quote for workout start
-        opening_quote = self._get_motivational_quote(training_type, 'warmup')
-        if opening_quote:
-            script_parts.append(f"**{opening_quote}**\n\n")
+        # STEP 1: Add Foxing Fit opening
+        opening_text = FoxingFitBranding.get_opening_text(training_type)
+        script_parts.append(f"{opening_text}\n\n")
         
+        # STEP 2: Process each script with intelligent quote placeholder replacement
         for i, script in enumerate(scripts):
             # Add section headers with sport-specific styling
             section_type = "🎯 SURPRISE ROUND" if script.is_surprise_round() else ""
@@ -564,49 +570,19 @@ class FlexibleWorkoutGenerator(
             # Add script metadata comment
             script_parts.append(f"<!-- {script.title} -->\n")
             
-            # Add the actual workout content
-            script_parts.append(script.content)
-            
-            # Strategic motivational quote placement
-            if i < len(scripts) - 2:  # Don't add quotes after last two scripts
-                # Add quotes during high-intensity sections
-                if script.intensity_level >= 3 or script.is_surprise_round():
-                    motivational_quote = self._get_motivational_quote(training_type, 'intense')
-                    if motivational_quote:
-                        script_parts.append(f"\n\n**{motivational_quote}**\n")
-                # Add quotes during category transitions
-                elif i > 0 and scripts[i-1].script_category != script.script_category:
-                    motivational_quote = self._get_motivational_quote(training_type, 'transition')
-                    if motivational_quote:
-                        script_parts.append(f"\n\n**{motivational_quote}**\n")
+            # Process script content with quote placeholder replacement ONLY
+            processed_content = quote_processor.process_script_content(script, training_type)
+            script_parts.append(processed_content)
             
             # Add pause between scripts for pacing
             script_parts.append("\n\n[pause strong] [pause strong]\n")
         
-        # Add closing motivational quote for workout end
-        closing_quote = self._get_motivational_quote(training_type, 'cooldown')
-        if closing_quote:
-            script_parts.append(f"\n**{closing_quote}**\n")
+        # STEP 3: Add Foxing Fit closing (NO quotes at end - Johnny's rule)
+        closing_text = FoxingFitBranding.get_closing_text(training_type)
+        script_parts.append(f"\n{closing_text}")
         
         return ''.join(script_parts)
     
-    def _get_motivational_quote(self, training_type, context):
-        """
-        Get contextually appropriate motivational quote with variety algorithm
-        Uses usage tracking to ensure quote variety and prevent repetition
-        """
-        quotes = MotivationalQuote.objects.filter(
-            training_type=training_type,
-            context__in=[context, 'anytime'],  # Match specific context or any-time quotes
-            is_active=True
-        ).order_by('times_used', 'last_used')  # Prefer less used quotes first
-        
-        if quotes.exists():
-            selected_quote = quotes.first()
-            selected_quote.mark_used()  # Track usage for variety
-            return selected_quote.get_formatted_quote()
-        
-        return None
     
     def _get_sport_additions_summary(self, scripts, training_type):
         """
