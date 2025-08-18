@@ -1,16 +1,25 @@
 from django.contrib import admin
 from .models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCategory
+from django.utils.html import format_html
+from django.core.exceptions import ValidationError
 
 @admin.register(ScriptCategory)
 class ScriptCategoryAdmin(admin.ModelAdmin):
+    # FIXED: Remove system_category_indicator, combine into special_round_indicator
     list_display = ['display_name', 'training_type', 'special_round_indicator', 'is_active']
-    list_filter = ['training_type', 'is_active']
+    list_filter = ['training_type', 'is_system_category', 'is_active']
     search_fields = ['display_name', 'name', 'description']
+    readonly_fields = ['is_system_category', 'created_at']
     
     fieldsets = (
         ('Basic Information', {
             'fields': ('display_name', 'training_type', 'name', 'description'),
-            'description': 'What this workout section is called and what it\'s for.'
+            'description': 'Category details. System categories have protected names.'
+        }),
+        ('System Information', {
+            'fields': ('is_system_category', 'created_at'),
+            'classes': ('collapse',),
+            'description': 'System-managed fields.'
         }),
         ('Management', {
             'fields': ('is_active',),
@@ -18,19 +27,82 @@ class ScriptCategoryAdmin(admin.ModelAdmin):
         }),
     )
     
+    def get_readonly_fields(self, request, obj=None):
+        """Make name and training_type readonly for system categories"""
+        readonly = list(self.readonly_fields)
+        
+        if obj and obj.is_system_category:
+            readonly.append('name')
+            readonly.append('training_type')
+            
+        return readonly
+    
     def special_round_indicator(self, obj):
-        """Show if this is a special round category"""
-        if obj.is_surprise_round():
-            return "🎯 Surprise Round"
-        elif obj.is_max_challenge():
-            return "💪 MAX Challenge"
-        elif obj.is_vinyasa_standing_to_standing():
-            return "🌊 Vinyasa S→S"
-        elif obj.is_vinyasa_standing_to_sitting():
-            return "🌊 Vinyasa S→Sit"
+        """FIXED: Combined indicator showing both system status and special function"""
+        if obj.is_system_category:
+            # Show system lock + special function
+            if obj.is_surprise_round():
+                return format_html('<span style="color: #FF9800; font-weight: bold;">🔒 🎯 Surprise Round</span>')
+            elif obj.is_max_challenge():
+                return format_html('<span style="color: #E91E63; font-weight: bold;">🔒 💪 MAX Challenge</span>')
+            elif obj.is_vinyasa_standing_to_standing():
+                return format_html('<span style="color: #009688; font-weight: bold;">🔒 🌊 Vinyasa S→S</span>')
+            elif obj.is_vinyasa_standing_to_sitting():
+                return format_html('<span style="color: #009688; font-weight: bold;">🔒 🌊 Vinyasa S→Sit</span>')
+            else:
+                return format_html('<span style="color: #2196F3; font-weight: bold;">🔒 SYSTEM</span>')
         else:
-            return "📝 Regular Exercise"
+            # Regular categories
+            if obj.is_surprise_round():
+                return "🎯 Surprise Round"
+            elif obj.is_max_challenge():
+                return "💪 MAX Challenge"
+            elif obj.is_vinyasa_standing_to_standing():
+                return "🌊 Vinyasa S→S"
+            elif obj.is_vinyasa_standing_to_sitting():
+                return "🌊 Vinyasa S→Sit"
+            else:
+                return "📝 Regular Exercise"
     special_round_indicator.short_description = 'Type'
+    
+    def delete_model(self, request, obj):
+        """Prevent deletion of system categories"""
+        if obj.is_system_category:
+            from django.contrib import messages
+            messages.error(request, f"Cannot delete system category '{obj.name}'. This category is required for sport-specific automation.")
+            return  # Don't delete, just return
+        super().delete_model(request, obj)
+    
+    def delete_queryset(self, request, queryset):
+        """Prevent bulk deletion of system categories"""
+        system_categories = queryset.filter(is_system_category=True)
+        if system_categories.exists():
+            system_names = list(system_categories.values_list('name', flat=True))
+            from django.contrib import messages
+            messages.error(request, f"Cannot delete system categories: {', '.join(system_names)}. These are required for sport automation.")
+            # Delete only non-system categories
+            non_system_categories = queryset.filter(is_system_category=False)
+            if non_system_categories.exists():
+                super().delete_queryset(request, non_system_categories)
+            return
+        super().delete_queryset(request, queryset)
+    
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        if obj and obj.is_system_category:
+            if 'name' in form.base_fields:
+                form.base_fields['name'].help_text = "🔒 SYSTEM CATEGORY - Name cannot be changed (required for automation)"
+            if 'display_name' in form.base_fields:
+                form.base_fields['display_name'].help_text = "✏️ You can customize this display name"
+            if 'training_type' in form.base_fields:
+                form.base_fields['training_type'].help_text = "🔒 Protected for system category"
+
+        return form
+    
+    def has_delete_permission(self, request, obj=None):
+        """Allow showing delete button, but handle protection in delete_model"""
+        return True
 
 @admin.register(WorkoutScript)
 class WorkoutScriptAdmin(admin.ModelAdmin):

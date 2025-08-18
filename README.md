@@ -131,7 +131,7 @@ python manage.py test
 
 # Add new sport
 # 1. Add to TRAINING_TYPES in models.py
-# 2. Create SportGeneratorMixin in services.py
+# 2. Create SportGeneratorMixin in generator.py
 # 3. Add to FlexibleWorkoutGenerator class
 ```
 

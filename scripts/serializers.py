@@ -3,7 +3,6 @@ from .models import WorkoutScript, WorkoutTemplate, MotivationalQuote, ScriptCat
 
 class ScriptCategorySerializer(serializers.ModelSerializer):
     training_type_display = serializers.CharField(source='get_training_type_display', read_only=True)
-    difficulty_display = serializers.CharField(source='get_difficulty_level_display', read_only=True)
     
     class Meta:
         model = ScriptCategory

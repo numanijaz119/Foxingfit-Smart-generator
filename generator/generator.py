@@ -83,12 +83,6 @@ class KickboxingIntelligenceMixin(SportSpecificLogicMixin):
         IMPORTANT: Surprise rounds are ONLY added where admin configured them in templates,
         not based on automatic category pattern detection. Admin has full control.
         """
-        # For kickboxing, the template processing already handles surprise rounds
-        # via the checkbox system during base workout generation.
-        # 
-        # This method exists for consistency but kickboxing intelligence is 
-        # primarily handled in template processing, not post-processing.
-        
         # Simply return scripts as-is since template processing already added
         # surprise rounds where admin specified via add_surprise_round_after=True
         return selected_scripts
@@ -110,12 +104,6 @@ class PowerYogaIntelligenceMixin(SportSpecificLogicMixin):
         IMPORTANT: Vinyasa transitions are ONLY added where admin configured them in templates,
         not based on automatic pose sequence detection. Admin has full control.
         """
-        # For power yoga, the template processing already handles vinyasa transitions
-        # via the checkbox system during base workout generation.
-        # 
-        # This method exists for consistency but power yoga intelligence is 
-        # primarily handled in template processing, not post-processing.
-        
         # Simply return scripts as-is since template processing already added
         # vinyasa transitions where admin specified via add_vinyasa_transition_after=True
         return selected_scripts

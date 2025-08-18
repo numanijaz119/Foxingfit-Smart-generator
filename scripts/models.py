@@ -1,26 +1,65 @@
 from django.db import models
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 import re
 
 class ScriptCategory(models.Model):
-
+    """
+    SYSTEM CATEGORIES APPROACH - Fixed special categories that cannot be deleted
+    """
     TRAINING_TYPES = [
         ('kickboxing', 'Kickboxing Heavybag'),
         ('power_yoga', 'Power Yoga'),
         ('calisthenics', 'Calisthenics'),
     ]
     
-    # Core fields only
+    # FIXED SYSTEM CATEGORIES - These exact names are protected and enable sport logic
+    SYSTEM_CATEGORIES = {
+        # Kickboxing system categories
+        'kb_surprise': {
+            'training_type': 'kickboxing',
+            'default_display_name': 'Surprise Rounds',
+            'description': 'System category for automatic surprise round insertion',
+        },
+        
+        # Calisthenics system categories  
+        'cal_max_challenge': {
+            'training_type': 'calisthenics',
+            'default_display_name': 'MAX Challenge',
+            'description': 'System category for MAX challenge rounds placed at workout end',
+        },
+        
+        # Power Yoga system categories
+        'py_vinyasa_s2s': {
+            'training_type': 'power_yoga',
+            'default_display_name': 'Vinyasa Standing-to-Standing',
+            'description': 'System category for standing-to-standing flow transitions',
+        },
+        
+        'py_vinyasa_s2sit': {
+            'training_type': 'power_yoga',
+            'default_display_name': 'Vinyasa Standing-to-Sitting',
+            'description': 'System category for standing-to-sitting flow transitions',
+        },
+    }
+    
+    # Core fields
     name = models.CharField(
         max_length=50, 
-        help_text="System name - don't change this once created"
+        help_text="System name - PROTECTED for system categories"
     )
     display_name = models.CharField(
         max_length=100, 
-        help_text="The name you see in workouts"
+        help_text="Display name - can be customized even for system categories"
     )
     training_type = models.CharField(max_length=15, choices=TRAINING_TYPES)
     description = models.TextField(blank=True, help_text="What this section is for")
+    
+    # System category flag
+    is_system_category = models.BooleanField(
+        default=False,
+        help_text="System category - cannot be deleted, name cannot be changed"
+    )
     
     # Management
     is_active = models.BooleanField(default=True, help_text="Turn off to hide this category")
@@ -32,29 +71,105 @@ class ScriptCategory(models.Model):
         verbose_name = "Script Category"
         verbose_name_plural = "Script Categories"
     
-    # Detection methods based on category names
+    def clean(self):
+        """Validate system category constraints"""
+        super().clean()
+        
+        # If this is a system category, validate it matches expected structure
+        if self.name and self.name in self.SYSTEM_CATEGORIES:
+            expected = self.SYSTEM_CATEGORIES[self.name]
+            
+            # Force correct training type for system categories
+            if self.training_type != expected['training_type']:
+                from django.core.exceptions import ValidationError
+                raise ValidationError(
+                    f"System category '{self.name}' must have training_type '{expected['training_type']}'"
+                )
+            
+            # Auto-set system flag
+            self.is_system_category = True
+    
+    def save(self, *args, **kwargs):
+        # Auto-detect and protect system categories
+        if self.name and self.name in self.SYSTEM_CATEGORIES:
+            self.is_system_category = True
+            
+        super().save(*args, **kwargs)
+    
+    def delete(self, *args, **kwargs):
+        """Prevent deletion of system categories"""
+        if self.is_system_category:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(f"Cannot delete system category '{self.name}'. This category is required for sport-specific logic.")
+        return super().delete(*args, **kwargs)
+    
+    # SIMPLE, EXACT DETECTION METHODS - No complex logic needed!
     def is_surprise_round(self):
-        return 'surprise' in self.name.lower()
+        """Exact name matching - no complex detection needed"""
+        return self.name == 'kb_surprise'
     
     def is_max_challenge(self):
-        return 'max' in self.name.lower() and 'challenge' in self.name.lower()
+        """Exact name matching - no complex detection needed"""
+        return self.name == 'cal_max_challenge'
     
     def is_vinyasa_standing_to_standing(self):
-        return 'vinyasa' in self.name.lower() and 's2s' in self.name.lower()
+        """Exact name matching - no complex detection needed"""
+        return self.name == 'py_vinyasa_s2s'
     
     def is_vinyasa_standing_to_sitting(self):
-        return 'vinyasa' in self.name.lower() and 's2sit' in self.name.lower()
+        """Exact name matching - no complex detection needed"""
+        return self.name == 'py_vinyasa_s2sit'
     
     def is_vinyasa_transition(self):
-        return 'vinyasa' in self.name.lower()
+        """Check if this is any vinyasa transition"""
+        return self.name in ['py_vinyasa_s2s', 'py_vinyasa_s2sit']
+    
+    def is_system_special_category(self):
+        """Check if this is any system special category"""
+        return self.name in self.SYSTEM_CATEGORIES
+    
+    @classmethod
+    def create_system_categories(cls):
+        """
+        Create all required system categories
+        Called during system setup to ensure special categories exist
+        """
+        created_categories = []
+        
+        for name, config in cls.SYSTEM_CATEGORIES.items():
+            category, created = cls.objects.get_or_create(
+                name=name,
+                training_type=config['training_type'],
+                defaults={
+                    'display_name': config['default_display_name'],
+                    'description': config['description'],
+                    'is_system_category': True,
+                    'is_active': True
+                }
+            )
+            
+            if created:
+                created_categories.append(category)
+        
+        return created_categories
+    
+    @classmethod
+    def get_system_category(cls, name):
+        """
+        Get a system category by exact name
+        Returns None if not found or not a system category
+        """
+        try:
+            category = cls.objects.get(name=name, is_system_category=True)
+            return category
+        except cls.DoesNotExist:
+            return None
     
     def __str__(self):
-        return f"{self.get_training_type_display()} - {self.display_name}"
+        system_indicator = " (SYSTEM)" if self.is_system_category else ""
+        return f"{self.get_training_type_display()} - {self.display_name}{system_indicator}"
 
 class WorkoutScript(models.Model):
-    """
-    CLEAN workout scripts - removed intensity_level, difficulty_level, transition_type
-    """
     
     TRAINING_TYPES = ScriptCategory.TRAINING_TYPES
     
