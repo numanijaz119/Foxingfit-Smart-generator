@@ -1,14 +1,19 @@
+# scripts/management/commands/setup.py - UPDATED FOR 3 GOALS
+
 import os
 from django.core.management.base import BaseCommand
 from django.db import transaction
 from scripts.models import WorkoutScript, MotivationalQuote, ScriptCategory, WorkoutTemplate
 
 class Command(BaseCommand):
-    help = 'Setup Johnny\'s workout templates based on his methodology (system categories auto-created via migration)'
+    help = 'Setup Johnny\'s complete workout system (default: full setup)'
     
     def add_arguments(self, parser):
-        parser.add_argument('--setup-complete-system', action='store_true',
-                          help='Setup workout templates following Johnny\'s rules')
+        # Default behavior: run full setup when no arguments provided
+        parser.add_argument('--templates-only', action='store_true',
+                          help='Only setup workout templates')
+        parser.add_argument('--categories-only', action='store_true', 
+                          help='Only setup workout categories')
         parser.add_argument('--dry-run', action='store_true',
                           help='Preview without making changes')
     
@@ -20,8 +25,14 @@ class Command(BaseCommand):
         
         try:
             with transaction.atomic():
-                if options['setup_complete_system']:
-                    self._setup_johnny_workout_system(dry_run)
+                # Default: Run full setup unless specific options provided
+                if options['templates_only']:
+                    self._setup_johnny_workout_templates(dry_run)
+                elif options['categories_only']:
+                    self._create_regular_categories(dry_run)
+                else:
+                    # FULL SETUP (default behavior)
+                    self._setup_complete_system(dry_run)
                 
                 if dry_run:
                     raise Exception("Dry run - rolling back")
@@ -32,10 +43,10 @@ class Command(BaseCommand):
             else:
                 self.stdout.write(self.style.ERROR(f"❌ Error: {e}"))
     
-    def _setup_johnny_workout_system(self, dry_run):
-        """Setup Johnny's complete workout system following his methodology"""
+    def _setup_complete_system(self, dry_run):
+        """Complete system setup - default behavior"""
         
-        self.stdout.write(self.style.SUCCESS("🎯 SETTING UP JOHNNY'S WORKOUT SYSTEM"))
+        self.stdout.write(self.style.SUCCESS("🎯 SETTING UP JOHNNY'S COMPLETE WORKOUT SYSTEM"))
         self.stdout.write("✅ System categories already created via migration")
         
         # Verify system categories exist
@@ -49,39 +60,37 @@ class Command(BaseCommand):
             for cat in system_categories:
                 self.stdout.write(f"   ✅ {cat.name} → {cat.display_name} ({cat.training_type})")
         
-        # STEP 1: Create regular categories based on Johnny's Drive structure
+        # STEP 1: Create regular categories
         self._create_regular_categories(dry_run)
         
-        # STEP 2: Create templates following Johnny's methodology
-        self._create_johnny_workout_templates(dry_run)
+        # STEP 2: Create improved templates
+        self._setup_johnny_workout_templates(dry_run)
         
         # STEP 3: Show system summary
         if not dry_run:
-            self._show_johnny_system_summary()
+            self._show_system_summary()
     
     def _create_regular_categories(self, dry_run):
-        """Create regular workout categories based on Johnny's Google Drive structure"""
+        """Create regular workout categories for 3-goal system"""
         
-        self.stdout.write("\n📁 CREATING REGULAR CATEGORIES (Based on Johnny's Drive)")
-        self.stdout.write("=" * 60)
-        
-        # JOHNNY'S ACTUAL DRIVE STRUCTURE
+        self.stdout.write("\n📁 CREATING REGULAR CATEGORIES (3-Goal System)")
+        self.stdout.write("=" * 55)
         
         # KICKBOXING: Based on actual Drive folders
         kickboxing_categories = [
             ('kb_warmup', 'Warmup'),
-            ('kb_cooldown', 'Cooldown / Shadow Boxing'),  # Johnny uses cooldown as warmup too
+            ('kb_cooldown', 'Cooldown / Shadow Boxing'),
             ('kb_footwork', 'Footwork'),
             ('kb_combinations', 'Combinations'),
             ('kb_legs_kicks', 'Legs & Kicks'),
             ('kb_abs', 'Abs Round'),
-            ('kb_endurance', 'Endurance'),
             ('kb_defence', 'Defence'),
             ('kb_stretch_relax', 'Stretch and Relax'),
+            ('kb_reaction_time', 'Reaction Time'),  # NEW: Added missing category
             # kb_surprise already created as system category
         ]
         
-        # POWER YOGA: Based on actual Drive + client requests
+        # POWER YOGA: Improved logical flow
         power_yoga_categories = [
             ('py_connecting', 'Connecting Phase'),
             ('py_sun_greeting', 'Sun Greeting'),
@@ -90,11 +99,11 @@ class Command(BaseCommand):
             ('py_seated', 'Seated Poses'),
             ('py_lying', 'Lying Poses'),
             ('py_savasana', 'Savasana'),
-            ('py_mindfulness', 'Mindfulness'),  # Client requested addition
+            ('py_mindfulness', 'Mindfulness'),
             # py_vinyasa_s2s and py_vinyasa_s2sit already created as system categories
         ]
         
-        # CALISTHENICS: Based on actual Drive + client additions
+        # CALISTHENICS: Complete set
         calisthenics_categories = [
             ('cal_warmup', 'Warmup'),
             ('cal_pushup', 'Push-up Variations'),
@@ -145,56 +154,50 @@ class Command(BaseCommand):
         
         self.stdout.write(self.style.SUCCESS(f"\n✅ Created {created_count} regular categories"))
     
-    def _create_johnny_workout_templates(self, dry_run):
-        """Create workout templates following Johnny's methodology and rules"""
+    def _setup_johnny_workout_templates(self, dry_run):
+        """Create improved workout templates for 3-goal system"""
         
-        self.stdout.write(self.style.SUCCESS("\n🏗️ CREATING JOHNNY'S WORKOUT TEMPLATES"))
-        self.stdout.write("✅ Following Johnny's methodology for each sport")
+        self.stdout.write(self.style.SUCCESS("\n🏗️ CREATING IMPROVED WORKOUT TEMPLATES"))
+        self.stdout.write("✅ Optimized for 3-goal system (allround, strength, flexibility)")
         
         def get_category(training_type, name):
             if dry_run:
                 return type('MockCategory', (), {'id': 1, 'name': name, 'display_name': name})()
             return ScriptCategory.objects.get(training_type=training_type, name=name)
         
-        # JOHNNY'S KICKBOXING METHODOLOGY
-        self.stdout.write(f"\n🥊 KICKBOXING TEMPLATES (Johnny's Rules)")
-        self.stdout.write("📋 Rule: Surprise rounds after core training sections")
+        # IMPROVED KICKBOXING TEMPLATES
+        self.stdout.write(f"\n🥊 KICKBOXING TEMPLATES (Improved)")
         kickboxing_templates = [
-            # (order, primary, alternatives, required, add_surprise_after, notes)
             (1, 'kb_warmup', ['kb_cooldown'], True, False, "Start: Warmup OR Shadow Boxing"),
             (2, 'kb_combinations', [], True, True, "Core: Combinations + AUTO-SURPRISE"),
-            (3, 'kb_legs_kicks', ['kb_abs'], True, True, "Power: Legs/Kicks OR Abs + AUTO-SURPRISE"),
-            (4, 'kb_endurance', ['kb_footwork', 'kb_defence'], False, True, "Optional: Endurance/Footwork/Defence + AUTO-SURPRISE"),
-            (5, 'kb_stretch_relax', [], True, False, "End: Stretch and Relax (no surprise)"),
+            (3, 'kb_legs_kicks', ['kb_abs'], True, True, "Power: Legs/Kicks OR Abs + AUTO-SURPRISE"), 
+            (4, 'kb_reaction_time', ['kb_footwork', 'kb_defence'], False, False, "Optional: Reaction Time OR Footwork OR Defence"),
+            (5, 'kb_stretch_relax', [], True, False, "End: Stretch and Relax"),
         ]
         
-        # JOHNNY'S POWER YOGA METHODOLOGY  
-        self.stdout.write(f"\n🧘‍♀️ POWER YOGA TEMPLATES (Johnny's Rules)")
-        self.stdout.write("📋 Rule: Vinyasa transitions between pose changes")
+        # IMPROVED POWER YOGA TEMPLATES (Logical Flow)
+        self.stdout.write(f"\n🧘‍♀️ POWER YOGA TEMPLATES (Improved Logical Flow)")
         power_yoga_templates = [
-            # (order, primary, alternatives, required, add_vinyasa_after, vinyasa_type, notes)
             (1, 'py_connecting', [], True, False, None, "Opening: Breath connection"),
             (2, 'py_sun_greeting', [], True, False, None, "Warmup: Sun salutations"),
-            (3, 'py_standing', [], True, True, 'standing_to_standing', "Standing poses + AUTO-VINYASA S→S"),
-            (4, 'py_yoga_flow', ['py_standing'], False, True, 'standing_to_standing', "Flow OR More standing + AUTO-VINYASA S→S"),
-            (5, 'py_standing', [], False, True, 'standing_to_sitting', "Final standing + AUTO-VINYASA S→Sit"),
-            (6, 'py_seated', [], True, False, None, "Seated poses (no more transitions back up)"),
+            (3, 'py_standing', [], True, False, None, "Standing poses sequence 1"),
+            (4, 'py_yoga_flow', ['py_standing'], False, False, None, "Flow OR More standing poses"),
+            (5, 'py_standing', [], False, True, 'standing_to_sitting', "Final standing + S→Sit transition"),
+            (6, 'py_seated', [], True, False, None, "Seated poses"),
             (7, 'py_lying', [], True, False, None, "Lying poses"),
             (8, 'py_savasana', ['py_mindfulness'], True, False, None, "End: Savasana OR Mindfulness"),
         ]
         
-        # JOHNNY'S CALISTHENICS METHODOLOGY
-        self.stdout.write(f"\n💪 CALISTHENICS TEMPLATES (Johnny's Rules)")
-        self.stdout.write("📋 Rule: MAX challenge at end, progression through difficulty")
+        # IMPROVED CALISTHENICS TEMPLATES
+        self.stdout.write(f"\n💪 CALISTHENICS TEMPLATES (Improved)")
         calisthenics_templates = [
-            # (order, primary, alternatives, required, add_max_after, notes)
             (1, 'cal_warmup', [], True, False, "Start: Joint mobility"),
             (2, 'cal_pushup', ['cal_situp'], True, False, "Basic: Push-ups OR Sit-ups"),
             (3, 'cal_pullup', ['cal_dips'], True, False, "Strength: Pull-ups OR Dips"),
             (4, 'cal_lsit', ['cal_explosive'], False, False, "Intermediate: L-sit OR Explosive"),
-            (5, 'cal_handstand', ['cal_back_lever', 'cal_front_lever', 'cal_planche'], False, False, "Advanced: Choose one advanced move"),
-            (6, 'cal_static_holds', [], False, True, "Conditioning + AUTO-MAX CHALLENGE"),
-            (7, 'cal_max_challenge', [], True, False, "DIRECT: MAX challenge (ultimate test)"),
+            (5, 'cal_handstand', ['cal_back_lever', 'cal_front_lever', 'cal_planche'], False, False, "Advanced: Choose one"),
+            (6, 'cal_static_holds', [], False, False, "Conditioning: Static holds"),
+            (7, 'cal_max_challenge', [], True, False, "Finale: MAX challenge"),
         ]
         
         created_count = 0
@@ -293,296 +296,34 @@ class Command(BaseCommand):
                 created_count += 1
                 self.stdout.write(f"   [DRY RUN] Step {order}: {notes}")
         
-        self.stdout.write(self.style.SUCCESS(f"\n✅ Created {created_count} Johnny-methodology templates"))
+        self.stdout.write(self.style.SUCCESS(f"\n✅ Created {created_count} improved templates"))
     
-    def _show_johnny_system_summary(self):
-        """Show summary of Johnny's complete workout system"""
+    def _show_system_summary(self):
+        """Show summary of complete system setup"""
         self.stdout.write(self.style.SUCCESS("\n🎯 JOHNNY'S WORKOUT SYSTEM READY"))
         
         self.stdout.write("\n🏆 Johnny's Sport Methodologies:")
-        self.stdout.write("   🥊 Kickboxing: Surprise rounds after core training (combos, power, endurance)")
-        self.stdout.write("   🧘‍♀️ Power Yoga: Smart vinyasa transitions between pose changes")  
+        self.stdout.write("   🥊 Kickboxing: Surprise rounds after core training")
+        self.stdout.write("   🧘‍♀️ Power Yoga: Logical S→Sit transition between standing and seated")  
         self.stdout.write("   💪 Calisthenics: Difficulty progression with MAX challenge finale")
         
-        self.stdout.write("\n🔒 System Categories (Auto-Protected):")
-        self.stdout.write("   🎯 kb_surprise - Auto-inserted after intense kickboxing sections")
-        self.stdout.write("   💪 cal_max_challenge - Auto-placed or direct-placed at workout end")
-        self.stdout.write("   🌊 py_vinyasa_s2s - Auto-inserted for standing-to-standing flows")
-        self.stdout.write("   🌊 py_vinyasa_s2sit - Auto-inserted for standing-to-sitting transitions")
+        self.stdout.write("\n🎯 3-Goal System:")
+        self.stdout.write("   📊 allround: General fitness and balance")
+        self.stdout.write("   💪 strength: Power, muscle building, intense training")
+        self.stdout.write("   🤸 flexibility: Stretching, mobility, relaxation")
         
-        self.stdout.write("\n📋 Template Logic:")
-        self.stdout.write("   ✅ OR Logic: 'Combinations OR Footwork' - system picks one")
-        self.stdout.write("   ✅ Required vs Optional: Johnny controls what's essential")
-        self.stdout.write("   ✅ Smart Timing: AUTO-additions appear exactly where Johnny wants")
-        self.stdout.write("   ✅ Sequence Control: Order numbers control workout flow")
+        self.stdout.write("\n🔒 System Categories (Auto-Protected):")
+        self.stdout.write("   🎯 kb_surprise - Kickboxing surprise rounds")
+        self.stdout.write("   💪 cal_max_challenge - Calisthenics MAX challenge")
+        self.stdout.write("   🌊 py_vinyasa_s2sit - Power Yoga standing-to-sitting transitions")
         
         self.stdout.write("\n🚀 Next Steps:")
         self.stdout.write("   1. Import scripts: python manage.py import_scripts --folder-path DATABASE_CONTENT")
         self.stdout.write("   2. Import quotes: python manage.py import_quotes --folder-path DATABASE_CONTENT")
-        self.stdout.write("   3. Customize templates: http://localhost:8000/admin/scripts/workouttemplate/")
-        self.stdout.write("   4. Generate workouts: API endpoints ready")
+        self.stdout.write("   3. Generate workouts: API endpoints ready")
         
-        self.stdout.write("\n💡 Johnny's Control:")
-        self.stdout.write("   ✏️ Can customize display names: 'Surprise Rounds' → 'Power Bursts'")
-        self.stdout.write("   ✏️ Can enable/disable template steps via checkboxes")
-        self.stdout.write("   ✏️ Can modify alternative categories for OR logic")
-        self.stdout.write("   ✏️ Can adjust sequence order to change workout flow")
-        self.stdout.write("   🚫 Cannot delete system categories (protected)")
-        self.stdout.write("   🚫 Cannot change system category names (readonly)")
-    
-    def _create_dummy_content(self, dry_run):
-        """Create dummy content that follows Johnny's methodology"""
-        
-        if not ScriptCategory.objects.exists():
-            self.stdout.write(self.style.ERROR("❌ Please run --setup-complete-system first"))
-            return
-        
-        if WorkoutScript.objects.exists():
-            self.stdout.write(self.style.WARNING("⚠️ Scripts already exist, skipping dummy content creation"))
-            return
-        
-        self.stdout.write(self.style.SUCCESS("📝 Creating dummy content following Johnny's methodology..."))
-        
-        # JOHNNY-STYLE dummy scripts
-        dummy_scripts = [
-            # KICKBOXING SCRIPTS (Following Johnny's style)
-            {
-                'title': 'Dynamic Shadow Boxing Warmup',
-                'category': 'kb_warmup',
-                'duration': 8.0,
-                'content': '''Welcome to your Foxing Fit kickboxing session. Time to wake up your warrior.
-
-[pause strong]
-
-Start with gentle shadow boxing. Light jabs, easy crosses. Feel your body awakening.
-
-[pause weak]
-
-[Onthoud,...] will be replaced with motivational quote
-
-Increase the pace gradually. Your body is preparing for battle.''',
-                'goal': 'allround',
-            },
-            {
-                'title': 'Fire Combinations',
-                'category': 'kb_combinations',
-                'duration': 12.0,
-                'content': '''Time for combination mastery. This is where technique meets explosive power.
-
-[pause strong]
-
-Basic 1-2: Jab-Cross. Sharp, precise, devastating.
-
-[pause weak]
-
-Add the hook: 1-2-3. Feel the flow, the rhythm of destruction.
-
-[pause strong]
-
-[Onthoud,...] will be replaced with motivational quote
-
-Now move! Side to side, in and out. Combinations with footwork - this is real fighting.''',
-                'goal': 'technique',
-            },
-            {
-                'title': 'Lightning Surprise Burst',
-                'category': 'kb_surprise',
-                'duration': 4.0,
-                'content': '''🎯 JOHNNY'S SURPRISE ROUND
-
-[pause strong]
-
-MAXIMUM INTENSITY! Everything you've got for 30 seconds!
-
-[pause weak]
-
-This is where champions are made. Push beyond your limits!
-
-This surprise round appears exactly where Johnny configured it!''',
-                'goal': 'endurance',
-            },
-            
-            # POWER YOGA SCRIPTS (Following Johnny's style)
-            {
-                'title': 'Breath and Intention',
-                'category': 'py_connecting',
-                'duration': 5.0,
-                'content': '''Welcome to your Foxing Fit Power Yoga journey. Let's connect with intention.
-
-[pause strong]
-
-Close your eyes if comfortable. Feel your breath, your heartbeat.
-
-[pause weak]
-
-[Onthoud,...] will be replaced with motivational quote
-
-Set your intention for this practice. What do you want to cultivate today?''',
-                'goal': 'flexibility',
-            },
-            {
-                'title': 'Warrior Flow Power',
-                'category': 'py_standing',
-                'duration': 15.0,
-                'content': '''Standing in your power. These are the poses that build strength and determination.
-
-[pause strong]
-
-Warrior I: Feel your foundation, reach for the sky.
-
-[pause weak]
-
-Warrior II: Open your heart, gaze forward with focus.
-
-[pause strong]
-
-[Onthoud,...] will be replaced with motivational quote
-
-This is where yoga becomes powerful. Hold with intention.''',
-                'goal': 'strength',
-            },
-            {
-                'title': 'Flowing Vinyasa S→S',
-                'category': 'py_vinyasa_s2s',
-                'duration': 3.0,
-                'content': '''🌊 JOHNNY'S VINYASA TRANSITION
-
-[pause strong]
-
-Flowing with breath from one standing pose to another.
-
-[pause weak]
-
-This transition appears exactly where Johnny configured it!
-
-Move with grace, move with power.''',
-                'goal': 'flexibility',
-            },
-            {
-                'title': 'Graceful Vinyasa S→Sit',
-                'category': 'py_vinyasa_s2sit',
-                'duration': 3.5,
-                'content': '''🌊 JOHNNY'S VINYASA TRANSITION
-
-[pause strong]
-
-Graceful transition from standing to seated practice.
-
-[pause weak]
-
-This transition appears exactly where Johnny configured it!
-
-Flow like water, strong like a mountain.''',
-                'goal': 'flexibility',
-            },
-            
-            # CALISTHENICS SCRIPTS (Following Johnny's style)
-            {
-                'title': 'Body Preparation Protocol',
-                'category': 'cal_warmup',
-                'duration': 8.0,
-                'content': '''Welcome to Foxing Fit Calisthenics. Your body is your only equipment.
-
-[pause strong]
-
-Joint rotations: Neck, shoulders, hips, ankles. Wake up every connection.
-
-[pause weak]
-
-[Onthoud,...] will be replaced with motivational quote
-
-Dynamic stretching: Leg swings, arm circles. Your body is your temple.''',
-                'goal': 'allround',
-            },
-            {
-                'title': 'Push-up Mastery Progression',
-                'category': 'cal_pushup',
-                'duration': 10.0,
-                'content': '''Time to master the fundamental push-up. Simple, but not easy.
-
-[pause strong]
-
-Standard push-ups first. Perfect form, full range of motion.
-
-[pause weak]
-
-[Onthoud,...] will be replaced with motivational quote
-
-Now variations: Wide grip, diamond, decline. Each one challenges you differently.''',
-                'goal': 'strength',
-            },
-            {
-                'title': 'Ultimate MAX Challenge',
-                'category': 'cal_max_challenge',
-                'duration': 5.0,
-                'content': '''💪 JOHNNY'S MAX CHALLENGE
-
-[pause strong]
-
-This is it. Your ultimate test. Everything you've trained for leads to this moment.
-
-[pause weak]
-
-Maximum effort, maximum heart, maximum determination.
-
-This MAX challenge appears exactly where Johnny configured it!
-
-Show yourself what you're truly capable of.''',
-                'goal': 'strength',
-            }
-        ]
-        
-        created_count = 0
-        special_rounds_created = 0
-        
-        for script_data in dummy_scripts:
-            is_special = self._is_special_category(script_data['category'])
-            
-            if not dry_run:
-                try:
-                    category = ScriptCategory.objects.get(name=script_data['category'])
-                    script, created = WorkoutScript.objects.get_or_create(
-                        title=script_data['title'],
-                        type=category.training_type,
-                        script_category=category,
-                        defaults={
-                            'content': script_data['content'],
-                            'duration_minutes': script_data['duration'],
-                            'goal': script_data['goal'],
-                            'language': 'nl',
-                            'notes': 'Johnny-style dummy content for testing methodology'
-                        }
-                    )
-                    if created:
-                        created_count += 1
-                        if is_special:
-                            special_rounds_created += 1
-                        special_indicator = self._get_special_indicator(script_data['category'])
-                        self.stdout.write(f"   ✅ {script_data['title']} ({script_data['duration']}min) {special_indicator}")
-                except ScriptCategory.DoesNotExist:
-                    self.stdout.write(self.style.WARNING(f"⚠️ Category {script_data['category']} not found"))
-            else:
-                created_count += 1
-                if is_special:
-                    special_rounds_created += 1
-                special_indicator = self._get_special_indicator(script_data['category'])
-                self.stdout.write(f"   [DRY RUN] {script_data['title']} {special_indicator}")
-        
-        self.stdout.write(self.style.SUCCESS(f"\n✅ Created {created_count} Johnny-style workout scripts"))
-        self.stdout.write(self.style.SUCCESS(f"🎯 Created {special_rounds_created} special round scripts"))
-        
-    
-    def _is_special_category(self, category_name):
-        """Check if category is a special system category"""
-        special_categories = ['kb_surprise', 'cal_max_challenge', 'py_vinyasa_s2s', 'py_vinyasa_s2sit']
-        return category_name in special_categories
-    
-    def _get_special_indicator(self, category_name):
-        """Get indicator for special categories"""
-        indicators = {
-            'kb_surprise': '🎯 (Johnny\'s auto-surprise system)',
-            'py_vinyasa_s2s': '🌊 (Johnny\'s auto-vinyasa system)', 
-            'py_vinyasa_s2sit': '🌊 (Johnny\'s auto-vinyasa system)',
-            'cal_max_challenge': '💪 (Johnny\'s auto-MAX system)',
-        }
-        return indicators.get(category_name, '')
+        self.stdout.write("\n💡 Usage:")
+        self.stdout.write("   python manage.py setup                    # Full setup (default)")
+        self.stdout.write("   python manage.py setup --templates-only   # Only templates")
+        self.stdout.write("   python manage.py setup --categories-only  # Only categories")
+        self.stdout.write("   python manage.py setup --dry-run          # Preview changes")

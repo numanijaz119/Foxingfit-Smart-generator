@@ -196,7 +196,7 @@ class IntelligentWorkoutGenerator(
             
             print(f"  {rule.sequence_order}. {rule.primary_category.display_name}{alt_text} {'(REQUIRED)' if rule.is_required else '(OPTIONAL)'}{special_text}")
         
-        # Generate base workout following template rules
+        # Generate base workout following template rules with improved logic
         selected_scripts = self.generate_base_workout_from_templates(
             template_rules, training_type, goal
         )
@@ -250,23 +250,56 @@ class IntelligentWorkoutGenerator(
         return self.compile_generation_results(workout_session, final_scripts, training_type)
     
     def generate_base_workout_from_templates(self, template_rules, training_type, goal):
-        """Enhanced template processing with smart fallbacks and user notifications"""
+        """Enhanced template processing with required step priority and budget planning"""
         
-        print(f"\n🏗️ TEMPLATE PROCESSING START")
-        print(f"Processing {template_rules.count()} template rules in sequence...")
+        print(f"\n🏗️ ENHANCED TEMPLATE PROCESSING START")
+        print(f"Processing {template_rules.count()} template rules with required step priority...")
         
         selected_scripts = []
         total_duration = 0
         min_duration = self.target_duration - self.time_flexibility
         max_duration = self.target_duration + self.time_flexibility
         
+        # PHASE 1: BUDGET PLANNING - Calculate required steps minimum duration
+        print(f"\n💰 PHASE 1: BUDGET PLANNING")
+        print(f"=" * 40)
+        
+        required_steps = [t for t in template_rules if t.is_required and t.is_active]
+        optional_steps = [t for t in template_rules if not t.is_required and t.is_active]
+        
+        print(f"📊 Found {len(required_steps)} required steps, {len(optional_steps)} optional steps")
+        
+        # Estimate minimum duration needed for required steps
+        estimated_required_duration = self._estimate_required_steps_duration(
+            required_steps, training_type, goal
+        )
+        
+        # Calculate budget available for optional steps
+        optional_budget = max_duration - estimated_required_duration
+        print(f"⏰ Estimated required duration: {estimated_required_duration:.1f} minutes")
+        print(f"💰 Optional budget available: {optional_budget:.1f} minutes")
+        
+        if optional_budget < 0:
+            print(f"⚠️ WARNING: Required steps may exceed target duration by {abs(optional_budget):.1f} minutes")
+            optional_budget = 0
+        
+        # PHASE 2: SEQUENTIAL PROCESSING with Budget Control
+        print(f"\n🎯 PHASE 2: SEQUENTIAL PROCESSING WITH BUDGET CONTROL")
+        print(f"=" * 60)
+        
+        optional_used = 0
+        
         for i, template_rule in enumerate(template_rules, 1):
             print(f"\n--- TEMPLATE STEP {template_rule.sequence_order} ---")
             print(f"🎯 Processing: {template_rule.primary_category.display_name}")
-            print(f"📋 Required: {template_rule.is_required}")
+            print(f"📋 Type: {'REQUIRED' if template_rule.is_required else 'OPTIONAL'}")
             print(f"⏰ Current duration: {total_duration:.1f}min / {max_duration:.1f}min max")
             
-            # Get all possible categories for this template step (OR logic)
+            if not template_rule.is_active:
+                print(f"⏭️ SKIPPED: Template step is inactive")
+                continue
+            
+            # Get all possible categories for this template step
             possible_categories = template_rule.get_all_possible_categories()
             active_categories = [cat for cat in possible_categories if cat.is_active]
             
@@ -283,41 +316,45 @@ class IntelligentWorkoutGenerator(
                 print("❌ No active categories available for this step")
                 if template_rule.is_required:
                     print("⚠️ This was a REQUIRED step - trying regular exercise fallback...")
-                    
-                    # Record missing category
-                    self.missing_categories.append({
-                        'category': template_rule.primary_category.display_name,
-                        'name': template_rule.primary_category.name,
-                        'required': True
-                    })
-                    
-                    # Use regular fallback (excluding special categories)
-                    fallback_script = self.find_fallback_script_for_training_type(
-                        training_type, goal, max_duration - total_duration
-                    )
-                    if fallback_script:
-                        print(f"✅ REGULAR FALLBACK FOUND: '{fallback_script.title}' ({fallback_script.script_category.display_name})")
-                        
-                        # Record the substitution
-                        self.fallback_substitutions.append({
-                            'missing': template_rule.primary_category.display_name,
-                            'used': fallback_script.script_category.display_name,
-                            'script': fallback_script.title
-                        })
-                        
-                        selected_scripts.append(fallback_script)
-                        total_duration += fallback_script.duration_minutes
-                        self.used_script_ids.add(fallback_script.id)
-                        fallback_script.mark_selected()
+                    self._handle_missing_required_step(template_rule, selected_scripts, training_type, goal, max_duration - total_duration)
                 continue
             
-            # Try to select a script from one of the possible categories
-            selected_script = self.select_best_script_from_categories(
-                active_categories, goal, training_type, max_duration - total_duration
-            )
+            # BUDGET CHECK: Different logic for required vs optional
+            if template_rule.is_required:
+                # REQUIRED: Always try to fulfill, but warn if tight on time
+                remaining_time = max_duration - total_duration
+                if remaining_time < 3:
+                    print(f"⚠️ TIGHT TIME: Only {remaining_time:.1f}min left for required step")
+                    
+                selected_script = self.select_best_script_from_categories(
+                    active_categories, goal, training_type, remaining_time
+                )
+                
+            else:
+                # OPTIONAL: Check budget first
+                remaining_optional_budget = optional_budget - optional_used
+                remaining_total_time = max_duration - total_duration
+                
+                # Use the smaller of the two constraints
+                available_time = min(remaining_optional_budget, remaining_total_time)
+                
+                print(f"💰 Optional budget check:")
+                print(f"   Remaining optional budget: {remaining_optional_budget:.1f}min")
+                print(f"   Remaining total time: {remaining_total_time:.1f}min")
+                print(f"   Available for this optional: {available_time:.1f}min")
+                
+                if available_time < 3:  # Need at least 3 minutes for a meaningful script
+                    print(f"⏭️ SKIPPED OPTIONAL: Insufficient budget ({available_time:.1f}min < 3min)")
+                    continue
+                    
+                selected_script = self.select_best_script_from_categories(
+                    active_categories, goal, training_type, available_time
+                )
             
+            # Process the selected script
             if selected_script:
-                print(f"✅ SELECTED: '{selected_script.title}'")
+                success_type = "REQUIRED" if template_rule.is_required else "OPTIONAL"
+                print(f"✅ {success_type} SELECTED: '{selected_script.title}'")
                 print(f"   Category: {selected_script.script_category.display_name}")
                 print(f"   Goal: {selected_script.goal} (requested: {goal})")
                 print(f"   Duration: {selected_script.duration_minutes}min")
@@ -327,63 +364,38 @@ class IntelligentWorkoutGenerator(
                 self.used_script_ids.add(selected_script.id)
                 selected_script.mark_selected()
                 
+                # Track optional budget usage
+                if not template_rule.is_required:
+                    optional_used += selected_script.duration_minutes
+                    print(f"   💰 Optional budget used: {optional_used:.1f}/{optional_budget:.1f}min")
+                
                 # Process special rounds
-                print(f"🔍 Checking for special rounds after this step...")
+                self._process_special_rounds_after_step(template_rule, selected_scripts, total_duration, training_type)
+                # Update total_duration after special rounds
+                total_duration = sum(script.duration_minutes for script in selected_scripts)
                 
-                if hasattr(template_rule, 'should_add_special_round'):
-                    special_category = template_rule.should_add_special_round()
-                else:
-                    print("⚠️ Template rule missing should_add_special_round method")
-                    special_category = None
-                
-                if special_category and special_category.is_active:
-                    print(f"🎯 Template requests special round: {special_category.display_name}")
-                    special_script = self.find_special_round_script(training_type, special_category)
-                    if special_script:
-                        selected_scripts.append(special_script)
-                        total_duration += special_script.duration_minutes
-                        
-                        if special_script.is_surprise_round():
-                            self.track_sport_addition('surprise_rounds_added')
-                        elif special_script.is_max_challenge():
-                            self.track_sport_addition('max_challenge_added')
-                        elif special_script.is_vinyasa_transition():
-                            self.track_sport_addition('vinyasa_transitions_added')
-                else:
-                    print("ℹ️ No special rounds requested for this step")
-                    
             elif template_rule.is_required:
                 print(f"❌ FAILED to find script for REQUIRED step: {template_rule.primary_category.display_name}")
-                print("🔄 Trying regular exercise fallback (excluding special categories)...")
-                
-                # Record missing category
-                self.missing_categories.append({
-                    'category': template_rule.primary_category.display_name,
-                    'name': template_rule.primary_category.name,
-                    'required': True
-                })
-                
-                fallback_script = self.find_fallback_script_for_training_type(
-                    training_type, goal, max_duration - total_duration
-                )
-                if fallback_script:
-                    print(f"✅ REGULAR FALLBACK FOUND: '{fallback_script.title}' ({fallback_script.script_category.display_name})")
-                    
-                    # Record the substitution
-                    self.fallback_substitutions.append({
-                        'missing': template_rule.primary_category.display_name,
-                        'used': fallback_script.script_category.display_name,
-                        'script': fallback_script.title
-                    })
-                    
-                    selected_scripts.append(fallback_script)
-                    total_duration += fallback_script.duration_minutes
-                    self.used_script_ids.add(fallback_script.id)
-                    fallback_script.mark_selected()
-                else:
-                    print("❌ No regular exercise fallback available - workout may be incomplete")
+                self._handle_missing_required_step(template_rule, selected_scripts, training_type, goal, max_duration - total_duration)
+                # Update total_duration after fallback
+                total_duration = sum(script.duration_minutes for script in selected_scripts)
             else:
                 print(f"⏭️ SKIPPED optional step: {template_rule.primary_category.display_name}")
+        
+        # PHASE 3: SUMMARY
+        print(f"\n📊 BUDGET PLANNING RESULTS:")
+        print(f"✅ Total duration: {total_duration:.1f} minutes")
+        print(f"💰 Optional budget used: {optional_used:.1f}/{optional_budget:.1f} minutes")
+        print(f"🎯 Target range: {min_duration:.1f}-{max_duration:.1f} minutes")
+        
+        if total_duration < min_duration:
+            shortage = min_duration - total_duration
+            print(f"📈 Workout short by {shortage:.1f}min - will add filler content")
+        elif total_duration > max_duration:
+            excess = total_duration - max_duration
+            print(f"📉 Workout long by {excess:.1f}min - will trim content")
+        else:
+            print(f"✅ Perfect duration within target range")
         
         # Show missing categories summary
         if self.missing_categories:
@@ -397,10 +409,110 @@ class IntelligentWorkoutGenerator(
                 for sub in self.fallback_substitutions:
                     print(f"  • {sub['missing']} → {sub['used']}: '{sub['script']}'")
         
-        print(f"\n🏗️ TEMPLATE PROCESSING COMPLETE")
-        print(f"📊 Generated {len(selected_scripts)} scripts, {total_duration:.1f}min total")
+        print(f"\n🏗️ ENHANCED TEMPLATE PROCESSING COMPLETE")
+        print(f"📊 Generated {len(selected_scripts)} scripts with required step priority")
         
         return selected_scripts
+    
+    def _estimate_required_steps_duration(self, required_steps, training_type, goal):
+        """Estimate minimum duration needed for all required steps"""
+        
+        print(f"🔍 Estimating required steps duration:")
+        total_estimated = 0
+        
+        for step in required_steps:
+            possible_categories = step.get_all_possible_categories()
+            
+            # Find shortest script in any of the possible categories
+            shortest_script = WorkoutScript.objects.filter(
+                type=training_type,
+                script_category__in=possible_categories,
+                is_active=True
+            ).exclude(id__in=self.used_script_ids).order_by('duration_minutes').first()
+            
+            if shortest_script:
+                step_duration = shortest_script.duration_minutes
+            else:
+                # Fallback estimate if no scripts found
+                step_duration = 5.0  # Conservative 5-minute estimate
+            
+            # Add potential special round duration
+            special_category = step.get_special_round_category_to_add_after()
+            if special_category:
+                special_script = WorkoutScript.objects.filter(
+                    type=training_type,
+                    script_category=special_category,
+                    is_active=True
+                ).order_by('duration_minutes').first()
+                
+                if special_script:
+                    step_duration += special_script.duration_minutes
+                else:
+                    step_duration += 3.5  # Conservative estimate for special rounds
+            
+            total_estimated += step_duration
+            print(f"   📋 {step.primary_category.display_name}: ~{step_duration:.1f}min")
+        
+        return total_estimated
+    
+    def _handle_missing_required_step(self, template_rule, selected_scripts, training_type, goal, max_remaining_duration):
+        """Handle missing required steps with fallback logic"""
+        
+        print("🔄 Trying regular exercise fallback for required step...")
+        
+        # Record missing category
+        self.missing_categories.append({
+            'category': template_rule.primary_category.display_name,
+            'name': template_rule.primary_category.name,
+            'required': True
+        })
+        
+        # Try fallback with remaining duration constraint
+        fallback_script = self.find_fallback_script_for_training_type(
+            training_type, goal, max_remaining_duration
+        )
+        
+        if fallback_script:
+            print(f"✅ REQUIRED FALLBACK: '{fallback_script.title}' ({fallback_script.script_category.display_name})")
+            
+            # Record the substitution
+            self.fallback_substitutions.append({
+                'missing': template_rule.primary_category.display_name,
+                'used': fallback_script.script_category.display_name,
+                'script': fallback_script.title
+            })
+            
+            selected_scripts.append(fallback_script)
+            self.used_script_ids.add(fallback_script.id)
+            fallback_script.mark_selected()
+        else:
+            print("❌ No fallback available - required step will be missing from workout")
+    
+    def _process_special_rounds_after_step(self, template_rule, selected_scripts, current_duration, training_type):
+        """Process special rounds that should be added after this step"""
+        
+        print(f"🔍 Checking for special rounds after this step...")
+        
+        special_category = template_rule.get_special_round_category_to_add_after()
+        
+        if special_category and special_category.is_active:
+            print(f"🎯 Template requests special round: {special_category.display_name}")
+            special_script = self.find_special_round_script(training_type, special_category)
+            if special_script:
+                selected_scripts.append(special_script)
+                
+                # Track the type of special addition
+                if special_script.is_surprise_round():
+                    self.track_sport_addition('surprise_rounds_added')
+                    print(f"🎯 Added surprise round: {special_script.title}")
+                elif special_script.is_max_challenge():
+                    self.track_sport_addition('max_challenge_added')
+                    print(f"💪 Added MAX challenge: {special_script.title}")
+                elif special_script.is_vinyasa_transition():
+                    self.track_sport_addition('vinyasa_transitions_added')
+                    print(f"🌊 Added vinyasa transition: {special_script.title}")
+        else:
+            print("ℹ️ No special rounds requested for this step")
     
     def select_best_script_from_categories(self, possible_categories, goal, training_type, max_remaining_duration):
         """Select best script from possible categories using goal fallback algorithm"""
@@ -466,8 +578,8 @@ class IntelligentWorkoutGenerator(
         
         if fallback_candidates.exists():
             # Show available goals for debugging
-            available_goals = fallback_candidates.values_list('goal', flat=True).distinct()
-            print(f"    Available goals: {list(available_goals)}")
+            available_goals = list(fallback_candidates.values_list('goal', flat=True).distinct())
+            print(f"Available goals: {available_goals}")
             
             selected = self._select_from_candidates_using_freshness(fallback_candidates)
             print(f"    ✅ Phase 2 SUCCESS: Selected '{selected.title}' (goal: {selected.goal}) - GOAL FALLBACK USED")
