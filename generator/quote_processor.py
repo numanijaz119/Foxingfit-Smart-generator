@@ -31,7 +31,7 @@ class QuoteProcessor:
         content = script.content
         
         # Find all quote placeholders
-        placeholder_pattern = r'\[Onthoud,\.+\]'
+        placeholder_pattern = r'\[\s*Onthoud\s*,\s*\.+\s*\]'
         placeholders = re.findall(placeholder_pattern, content)
         
         if not placeholders:
