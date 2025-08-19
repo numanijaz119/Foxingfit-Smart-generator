@@ -175,10 +175,8 @@ class WorkoutScript(models.Model):
     
     GOALS = [
         ('allround', 'All-round'),
-        ('endurance', 'Endurance'),
         ('strength', 'Strength'),
         ('flexibility', 'Flexibility'),
-        ('technique', 'Technique'),
     ]
     
     LANGUAGES = [
@@ -260,6 +258,9 @@ class WorkoutScript(models.Model):
     
     def save(self, *args, **kwargs):
         self.clean_title()
+        # AUTO-ROUND duration to 1 decimal place
+        if self.duration_minutes is not None:
+            self.duration_minutes = round(self.duration_minutes, 1)
         super().save(*args, **kwargs)
     
     def mark_selected(self):
@@ -554,6 +555,10 @@ class WorkoutTemplate(models.Model):
             return vinyasa_category
         
         return None
+    
+    def should_add_special_round(self):
+        """Alias for get_special_round_category_to_add_after() for generator compatibility"""
+        return self.get_special_round_category_to_add_after()
     
     def has_any_special_addition(self):
         """Check if this template step adds any special round after"""

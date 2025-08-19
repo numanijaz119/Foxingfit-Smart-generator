@@ -18,7 +18,7 @@ class WorkoutGeneratorViewSet(viewsets.ViewSet):
         UPDATED: Now uses IntelligentWorkoutGenerator with full admin control
         Body Parameters:
         - training_type (required): 'kickboxing', 'power_yoga', or 'calisthenics'
-        - goal (optional): 'allround', 'endurance', 'strength', 'flexibility', 'technique' (default: 'allround')
+        - goal (optional): 'allround','strength', 'flexibility', (default: 'allround')
         - target_duration (optional): Target duration in minutes, 15-120 (default: 60.0)
         
         Returns:
@@ -44,7 +44,7 @@ class WorkoutGeneratorViewSet(viewsets.ViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Validate goal
-        valid_goals = ['allround', 'endurance', 'strength', 'flexibility', 'technique']
+        valid_goals = ['allround', 'strength', 'flexibility']
         if goal not in valid_goals:
             return Response({
                 'error': f'Invalid goal. Must be one of: {valid_goals}'
