@@ -536,17 +536,16 @@ class WorkoutTemplate(models.Model):
             return max_category
         
         elif self.add_vinyasa_transition_after and self.vinyasa_type:
-            # System auto-finds vinyasa category based on admin's type selection
             if self.vinyasa_type == 'standing_to_sitting':
                 vinyasa_category = ScriptCategory.objects.filter(
                     training_type=self.training_type,
-                    name__icontains='s2sit',  # Auto-find standing-to-sitting
+                    name='py_vinyasa_s2sit',  #EXACT match
                     is_active=True
                 ).first()
             elif self.vinyasa_type == 'standing_to_standing':
                 vinyasa_category = ScriptCategory.objects.filter(
                     training_type=self.training_type,
-                    name__icontains='s2s',  # Auto-find standing-to-standing
+                    name='py_vinyasa_s2s',   #EXACT match
                     is_active=True
                 ).first()
             else:
