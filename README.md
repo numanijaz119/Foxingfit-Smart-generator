@@ -82,15 +82,6 @@ foxing_fit_backend/
 python manage.py import_from_drive --import-local-files --folder-path DATABASE_CONTENT
 ```
 
-Expected structure:
-
-```
-DATABASE_CONTENT/
-├── kickboxing/combinations/
-├── power_yoga/standing_poses/
-└── calisthenics/pushup/
-```
-
 ## 🔧 Configuration
 
 Create `.env`:
@@ -123,36 +114,3 @@ DJANGO_DEBUG=True
 | `/api/generator/generate/generate_workout/` | POST      | Generate workout  |
 | `/api/generator/sessions/`                  | GET       | View sessions     |
 
-## 🚧 Development
-
-```bash
-# Run tests
-python manage.py test
-
-# Add new sport
-# 1. Add to TRAINING_TYPES in models.py
-# 2. Create SportGeneratorMixin in generator.py
-# 3. Add to FlexibleWorkoutGenerator class
-```
-
-## 🎯 Roadmap
-
-- [ ] .docx export functionality
-- [ ] Multi-language support (English)
-- [ ] AI-powered content suggestions
-- [ ] Voice file (.mp3) integration
-
-## 🤝 Contributing
-
-1. Fork repository
-2. Create feature branch
-3. Add tests and documentation
-4. Submit pull request
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) file.
-
----
-
-**Made for fitness professionals who want intelligent automation, not content creation headaches.**
