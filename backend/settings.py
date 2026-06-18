@@ -82,8 +82,22 @@ TEMPLATES = [
 WSGI_APPLICATION = 'backend.wsgi.application'
 
 
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': os.getenv('DB_NAME'),
+#         'USER': os.getenv('DB_USER'),
+#         'PASSWORD': os.getenv('DB_PASSWORD'),
+#         'HOST': os.getenv('DB_HOST', 'localhost'),
+#         'PORT': os.getenv('DB_PORT', '3306'),
+#         'OPTIONS': {
+#             'charset': 'utf8mb4',
+#             'use_unicode': True,
+#             # Force MySQL to use utf8mb4 for new connections
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'; SET NAMES utf8mb4;",
+#         },
+#     }
+# }
 
 DATABASES = {
     'default': {
@@ -95,6 +109,7 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -128,7 +143,9 @@ USE_TZ = True
 
 
 STORAGES = {
-    # ...
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
@@ -162,11 +179,62 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 50
 }
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://foxing-fit.vercel.app",
+    "https://foxingfit.pythonanywhere.com",
+]
+
+
+
 # CORS settings (for future frontend)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://foxingfit.vercel.app"
+    "https://foxing-fit.vercel.app",
+    'https://foxingfit.pythonanywhere.com',
 ]
+
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'None'
+
+# Session settings for admin login through proxy
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = 'None'
+
+# Trust the proxy headers
+USE_TZ = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
+
+# Additional headers needed for admin and audio streaming
+CORS_ALLOWED_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-forwarded-for',
+    'x-forwarded-proto',
+    'referer',
+    'range',  # Required for audio/video streaming
+]
+
+# Expose headers for audio streaming
+CORS_EXPOSE_HEADERS = [
+    'content-range',
+    'accept-ranges',
+    'content-length',
+    'content-type',
+]
+
+# How many hours a merged audio file is kept before auto-cleanup (default 2h)
+MERGED_AUDIO_TTL_HOURS = 2
